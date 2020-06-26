@@ -1,0 +1,678 @@
+#!/usr/bin/env node
+
+const program = require("commander");
+const fs = require("fs");
+const BigNumber = require("bignumber.js");
+const JingchangWallet = require('jcc_wallet').JingchangWallet
+const jtWallet = require('jcc_wallet').jtWallet
+const JCCExchange = require('jcc_exchange').JCCExchange;
+const Tx = require('jcc_exchange').Tx;
+const signTransaction = require('jcc_exchange').sign;
+const multiSignTransaction = require('jcc_exchange').multiSign;
+const swtcSequence = require('jcc_exchange').swtcSequence;
+const exchangeInstance = require('jcc_exchange').exchangeInstance;
+var readlineSync = require("readline-sync");
+const { convertStringToHex, convertHexToString } = require("@swtc/common");
+
+function getBaseHome() {
+  return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-jingtum-tool";
+}
+
+program.version("0.0.1");
+program.usage("--help", "Show jingtum-tools help");
+
+let _description = "SWTC command line tools";
+program.description(_description);
+
+program.option("--config <config file>", "specified config file, defaut is " + getBaseHome() + "/config.json");
+
+program.option("--wallet_create", "Create new SWTC wallet");
+program.option("--save_wallet", "save wallet to keystore file when create");
+program.option("--import_private_to_keystore", "import private key to keystore file");
+program.option("--keystore <keystore file>", "keystore file path");
+program.option("--password <keystore file password>", "keystore password");
+program.option("--show_secret", "show account secret");
+
+program.option("--multi_create <weight and account list>", "Create multisign wallet, like '2,accout,1,account,1'");
+
+program.option("--guess <string>", "format: s/a,b/Axu/c,b/ secret size is 29");
+
+program.option("--server <SWTC node address>", "node rpc address");
+
+program.option("--block <block number>", "get block info by number or latest");
+program.option("--transaction <hash>", "get transaction by hash");
+program.option("--receipt <hash>", "get transaction receipt by hash");
+
+program.option("--balance <Wallet address>", "get balance of address");
+program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
+program.option("--memo <string>", "memo pass by transaction");
+program.option("--token <string>", "token name, default is SWT");
+program.option("--issuer <string>", "issuer account, default is empty");
+program.option("--amount <amount>", "transfer amount");
+program.option("--get_sign", "show signed tx");
+program.option("--save_sign <filename>", "save signed content for multi sign");
+program.option("--multi_sign", "multi sign flag");
+program.option("--sign_for <string>", "sign for account by multi-sign");
+program.option("--multi_sign_commit", "multi sign commit flag");
+program.option("--signers <signers file path>", "signer1 file, signer2 file");
+
+program.option("--createOrder", "create order flag");
+program.option("--type <buy/sell>", "buy or sell");
+
+program.option("--nonce <number>", "specified nonce");
+program.option("--getNonce", "get current nonce");
+// program.option("--gas_price <number>", "specified gasPrice, default 10000000000");
+// program.option("--gas_limit <number>", "specified gas limit, default 50000");
+
+// program.option("--erc20 <string>", "erc20 address");
+// program.option("--erc721 <string>", "erc721 address");
+// program.option("--fingate <string>", "fingate address");
+
+// program.option("--abi <contract json file>", "abi definition");
+// program.option("--contractAddr <contract address>", "contract address");
+
+// program.option("--method <string>", "specified contract method name");
+// program.option("--parameters <string>", "specified contract parameters which seprator by |");
+
+program.parse(process.argv);
+
+async function createWallet() {
+  let password = "";
+  if (program.save_wallet) {
+    password = readlineSync.question("Password:", { hideEchoBack: true });
+  }
+  let jc = await JingchangWallet.generate(password);
+  if (!program.save_wallet) {
+    let inst = new JingchangWallet(jc);
+    let wallet = { address: await inst.getAddress(), secret: await inst.getSecretWithType(password) };
+    console.log(JSON.stringify(wallet, null, 2));
+    return;
+  }
+  fs.writeFileSync(jc.wallets[0].address, JSON.stringify(jc, null, 2), "utf-8");
+}
+if (program.wallet_create) {
+  createWallet();
+  return;
+}
+
+async function importPrivateToKeystore() {
+  var secret = readlineSync.question("SWTC wallet secret:", { hideEchoBack: true });
+
+  if (!jtWallet.isValidSecret(secret)) {
+    console.log("secret invalid, abort.");
+    return;
+  }
+  var password = readlineSync.question("Password:", { hideEchoBack: true });
+  var getAddress = jtWallet.getAddress;
+
+  let jc = await JingchangWallet.generate(password);
+  let inst = new JingchangWallet(jc, true, true);
+  await inst.importSecret(secret, password, "swt", getAddress);
+  let address = getAddress(secret);
+  await inst.removeWalletWithType();
+
+  fs.writeFileSync(inst._jingchangWallet.wallets[0].address, JSON.stringify(inst._jingchangWallet, null, 2), "utf-8");
+  console.log("\n", inst._jingchangWallet.wallets[0].address, "saved");
+
+  return;
+}
+if (program.import_private_to_keystore) {
+  importPrivateToKeystore();
+  return;
+}
+
+// 获取配置文件
+let _config = program.config;
+let _options = {};
+
+// 如果文件位置没有通过参数传递
+if (!!!_config) {
+  _config = getBaseHome() + "/config.json";
+}
+if (_config.indexOf("/") == -1 && _config.indexOf("\\") == -1) {
+  if (_config.indexOf("json") == -1) {
+    _config = getBaseHome() + "/config." + _config + ".json";
+  }
+}
+if (!fs.existsSync(_config)) {
+  console.log("can not get", _config, "file, create it manula!");
+  process.exit();
+}
+
+// 读取文件
+try {
+  _options = Object.assign(_options, JSON.parse(fs.readFileSync(_config, "utf-8")));
+} catch (e) {
+  console.log("Parse config file fail, check and correct it", e);
+  process.exit();
+}
+
+if (!!program.server) {
+  _options.server = program.server;
+}
+
+async function getWalletFromKeystoreFile(_file, _password) {
+  if (fs.existsSync(_file)) {
+    try {
+      var ks = JSON.parse(fs.readFileSync(_file, "utf-8"));
+      var password;
+      if (!_password) {
+        password = readlineSync.question("Password:", { hideEchoBack: true });
+      } else {
+        password = _password;
+      }
+
+      let inst = new JingchangWallet(ks);
+      let w = { address: await inst.getAddress(), secret: await inst.getSecretWithType(password) };
+      return w;
+    } catch (e) {
+      console.log("Parse keystore file fail, check and correct it", e);
+      process.exit();
+    }
+  } else {
+    console.log("Can not find", _file, "abort!");
+    process.exit();
+  }
+}
+async function getSinger() {
+  if (!program.signers) {
+    console.log('--signers parameter is empty!');
+    process.exit(-1);
+  }
+  let files = program.signers.split(',');
+  let signers = [];
+  for (var i = 0; i < files.length; i++) {
+    try {
+      signers[i] = JSON.parse(fs.readFileSync(files[i], "utf-8"));
+    } catch (e) {
+      console.log("Parse config file fail, check and correct it", e);
+      process.exit();
+    }
+  }
+  return signers;
+}
+
+async function getWalletFromKeystore() {
+  if (!program.keystore) {
+    return;
+  }
+  let keystorePath = program.keystore;
+  // 兼容windows下的路径
+  if (keystorePath.indexOf("/") == -1 && keystorePath.indexOf("\\") == -1) {
+    keystorePath = getBaseHome() + "/" + keystorePath;
+  }
+
+  _options.wallet = Object.assign(_options.wallet, await getWalletFromKeystoreFile(keystorePath, program.password));
+}
+
+function generateTries(items, content, itemIdx) {
+  let res = "";
+  if (itemIdx < items.length - 1) {
+    if (!Array.isArray(items[itemIdx])) {
+      res = generateTries(items, content + items[itemIdx], itemIdx + 1);
+      if (res !== "") {
+        return res;
+      }
+    } else {
+      for (var i = 0; i < items[itemIdx].length; i++) {
+        res = generateTries(items, content + items[itemIdx][i], itemIdx + 1);
+        if (res !== "") {
+          return res;
+        }
+      }
+    }
+    return "";
+  }
+
+  // 最后输出
+  if (!Array.isArray(items[itemIdx])) {
+    if (jtWallet.isValidSecret(content + items[itemIdx])) {
+      return (content + items[itemIdx]);
+    }
+  } else {
+    for (var i = 0; i < items[itemIdx].length; i++) {
+      if (jtWallet.isValidSecret(content + items[itemIdx][i])) {
+        return (content + items[itemIdx][i]);
+      }
+    }
+  }
+  return "";
+}
+
+if (program.guess) {
+  let items = program.guess.split('/');
+  if (items.length < 3) {
+    console.log(items.join(''), ", well, nothing to do");
+    return;
+  }
+
+  var tries = 1;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].indexOf(',') == -1) {
+      continue;
+    }
+    items[i] = items[i].split(',');
+    tries = tries * items[i].length;
+  }
+
+  console.log('tries:', tries, 'file size:', (30 * tries / 1024) + 'k');
+  if (tries > 100000) {
+    console.log('Too many tries, abort');
+    return;
+  }
+  let res = generateTries(items, "", 0);
+  if (res) {
+    console.log("Got it!", res);
+  } else {
+    console.log("Well, Got nothing.")
+  }
+}
+// if (!isNaN(Number(program.gas_limit))) {
+//   _options.gasLimit = Number(program.gas_limit);
+// }
+// if (!isNaN(Number(program.gas_price))) {
+//   _options.gasPrice = Number(program.gas_price);
+// }
+// if (!!program.server) {
+//   _options.server = program.server;
+// }
+
+// async function getBalance() {
+//   let balance = await inst.getBalance(program.balance);
+//   console.log("balance:", balance);
+// }
+// async function getCurrentNonce(address) {
+//   let nonce = await inst.getNonce(address);
+//   console.log("current nonce:", nonce.toString());
+// }
+
+// async function getGasPrice() {
+//   if (!_options.gasPrice) {
+//     _options.gasPrice = await inst.getGasPrice();
+//   }
+//   return _options.gasPrice;
+// }
+
+// async function getBlock(block) {
+//   let info = await inst.getBlock(block);
+//   console.log("block:", JSON.stringify(info, null, 2));
+// }
+
+// async function getTransaction(hash) {
+//   let info = await inst.getTransaction(hash);
+//   console.log("transaction:", JSON.stringify(info, null, 2));
+// }
+
+// async function getTransactionReceipt(hash) {
+//   let info = await inst.getTransactionReceipt(hash);
+//   console.log("transaction receipt:", JSON.stringify(info, null, 2));
+// }
+// async function getNonce(address) {
+//   if (!program.nonce) {
+//     let n = await inst.getNonce(_options.wallet.address);
+//     return n;
+//   }
+//   return program.nonce;
+// }
+
+function tx_filter_multisign(tx) {
+  tx.Fee = 80000;
+  if (tx.Amount && !isNaN(tx.Amount)) {
+    tx.Amount = (Number(tx.Amount) * 1000000) + "";
+  }
+  if (tx.TakerPays && !isNaN(tx.TakerPays)) {
+    tx.TakerPays = (Number(tx.TakerPays) * 1000000) + "";
+  }
+  if (tx.TakerGets && !isNaN(tx.TakerGets)) {
+    tx.TakerGets = (Number(tx.TakerGets) * 1000000) + "";
+  }
+  if (tx.Memos) {
+    for (const memo of tx.Memos) {
+      if (memo.Memo.MemoType) {
+        memo.Memo.MemoType = convertStringToHex(memo.Memo.MemoType);
+      }
+      memo.Memo.MemoData = convertStringToHex(memo.Memo.MemoData);
+    }
+  }
+  return tx;
+}
+function getSignerTx(tx) {
+  let signer;
+  if (!!program.signers) {
+    tx.SigningPubKey = "";
+    delete tx.TxnSignature;
+    signer = tx;
+  } else {
+    signer = multiSignTransaction(tx, _options.wallet.secret, "jingtum", true);
+  }
+  return signer;
+}
+
+// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 0.001 --get_sign
+// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --multi_sign --signers "s1.json,s2.json,s3.json" 
+async function transfer(_dest, _token, _issuer, _amount, _memo) {
+  await getWalletFromKeystore();
+  let tx = Tx.serializePayment(
+    !program.sign_for ? _options.wallet.address : program.sign_for,
+    _amount, _dest, _token, _memo, _issuer);
+
+  let seq = await swtcSequence.get(
+    JCCExchange.getSequence,
+    !program.sign_for ? _options.wallet.address : program.sign_for);
+  tx.Sequence = seq;
+
+  if (!program.multi_sign) {
+
+    let signed = signTransaction(tx, _options.wallet.secret, "jingtum", true);
+
+    if (program.get_sign) {
+      console.log(JSON.stringify(signed, null, 2), JSON.stringify(tx, null, 2));
+      process.exit(0);
+    }
+    const inst = exchangeInstance.init(JCCExchange.urls);
+    let hash = await JCCExchange.sendRawTransaction(signed.blob, inst.sendRawTransaction.bind(inst));
+
+    console.log("transfer hash:", hash);
+  } else {
+    if (!!program.signers) {
+      tx.Signers = await getSinger();
+    }
+
+    let signer = getSignerTx(tx);
+
+    if (program.get_sign) {
+      console.log(JSON.stringify(signer, null, 2));
+      if (!!program.save_sign) {
+        try {
+          fs.writeFileSync(program.save_sign, JSON.stringify(signer, null, 0));
+        } catch (e) {
+          console.log("save file fail!", e);
+          process.exit();
+        }
+      }
+      process.exit(0);
+    }
+
+    // 交易发送 Fee 取多签最大值，不需要除以100万
+    tx = tx_filter_multisign(tx);
+
+    const inst = exchangeInstance.init(JCCExchange.urls);
+
+    // 多签需要json不是blob
+    let hash = await JCCExchange.sendRawTransaction(tx, inst.submit_multisigned.bind(inst));
+
+    console.log("transfer hash:", hash);
+  }
+  process.exit(0);
+}
+
+async function createOrder(_amount, _base, _counter, _sum, _type, _issuer) {
+  await getWalletFromKeystore();
+  let tx = Tx.serializeCreateOrder(
+    !program.sign_for ? _options.wallet.address : program.sign_for,
+    _amount, _base, _counter, _sum, _type, _issuer);
+
+  let seq = await swtcSequence.get(
+    JCCExchange.getSequence,
+    !program.sign_for ? _options.wallet.address : program.sign_for);
+  tx.Sequence = seq;
+
+  if (!program.multi_sign) {
+
+  } else { }
+}
+// src/jcc-jingtum-tool --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "2,jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt,1,jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv,1,jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA,1"
+// src/jcc-jingtum-tool --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "0"
+async function createMultiSign() {
+  await getWalletFromKeystore();
+  let parameters = program.multi_create.split(',');
+  // console.log(parameters);
+  if (isNaN(parameters[0])) {
+    console.log("quorum must be number", parameters[0]);
+    process.exit();
+  }
+  let quorum = Number(parameters[0]);
+  if (quorum > 8) {
+    console.log("quorum must be small than 8", quorum);
+    process.exit();
+  }
+
+  if ((parameters.length <= 1 && quorum > 0) || (parameters.length - 1) % 2 > 0) {
+    console.log("parameters count error");
+    process.exit();
+  }
+  let weigths = [];
+  for (var i = 1; i < parameters.length - 1; i++, i++) {
+    weigths[(i - 1) / 2] = { SignerEntry: { Account: parameters[i], SignerWeight: Number(parameters[i + 1]) } };
+  }
+
+  let tx = Tx.serializeSignerList(_options.wallet.address, quorum, weigths);
+  let seq = await swtcSequence.get(JCCExchange.getSequence, _options.wallet.address);
+  tx.Sequence = seq;
+  let signed = signTransaction(tx, _options.wallet.secret, "jingtum", true);
+  if (program.get_sign) {
+    console.log(JSON.stringify(signed, null, 2));
+    process.exit(0);
+  }
+
+  const inst = exchangeInstance.init(JCCExchange.urls);
+  let hash = await JCCExchange.sendRawTransaction(signed.blob, inst.sendRawTransaction.bind(inst));
+
+  console.log("create multi sign hash:", hash);
+}
+
+// const sleep = (milliseconds) => {
+//   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+// };
+
+// function getFile(filename) {
+//   if (!fs.existsSync(filename)) {
+//     filename = __dirname + "/" + filename;
+//     if (!fs.existsSync(filename)) {
+//       console.log("can not find ", filename);
+//       process.exit();
+//     }
+//   }
+//   try {
+//     return JSON.parse(fs.readFileSync(filename, "utf-8"));
+//   } catch (e) {
+//     console.log("get file ", filename, "error", e);
+//     process.exit(-1);
+//   }
+// }
+
+// async function deploy(compiledJson) {
+//   let _json = getFile(compiledJson);
+//   if (!_json.bytecode) {
+//     console.log("can not get byte code");
+//     process.exit(-1);
+//   }
+
+//   let abi = _json.abi;
+//   let constructor = abi.find((item) => item.type == "constructor");
+//   if (!constructor) {
+//     console.log("Can not find constructor in file", compiledJson, ", Please check it!");
+//   }
+//   if (constructor.inputs.length > 0 && !program.parameters) {
+//     console.log("miss --parameter arguments");
+//     process.exit();
+//   }
+//   let calldata;
+//   if (constructor.inputs.length == 0) {
+//     program.parameters = [];
+//     calldata = _json.bytecode;
+//   } else {
+//     const typename = constructor.inputs.map((input) => input.type);
+//     calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
+//   }
+//   let nonce = await getNonce(_options.wallet.address);
+//   let gasPrice = await getGasPrice();
+//   let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
+//   let signed = await inst.signTransaction(tx, _options.wallet.secret);
+//   let hash;
+//   try {
+//     hash = await inst.sendSignedTransaction(signed);
+//   } catch (e) {
+//     console.log(e);
+//     process.exit(-1);
+//   }
+//   console.log("create contract transaction hash:", hash);
+//   console.log("waiting for contract address.......");
+//   for (var i = 0; i < 20; i++) {
+//     await sleep(2000);
+//     let receipt = await inst.getTransactionReceipt(hash);
+//     if (receipt && receipt.contractAddress) {
+//       console.log("create contract", receipt.status ? "success" : "fail", "\ncontract address:", receipt.contractAddress);
+//       process.exit(0);
+//       return;
+//     }
+//   }
+
+//   console.log("can not get contract address, try get transaction receipt later");
+// }
+async function showSecret() {
+  await getWalletFromKeystore();
+  console.log(_options.wallet);
+  process.exit();
+}
+
+if (program.show_secret) {
+  showSecret();
+  return;
+}
+// 初始化连接
+let inst = JCCExchange.init([_options.server]);
+
+if (program.block) {
+  // getBlock(program.block);
+  console.log("TODO: get block info");
+  return;
+}
+
+if (program.transaction) {
+  // getTransaction(program.transaction);
+  console.log("TODO: get transaction info");
+  return;
+}
+
+if (program.receipt) {
+  // getTransactionReceipt(program.receipt);
+  console.log("TODO: get receipt info");
+  return;
+}
+
+// if (program.balance) {
+//   getBalance();
+//   return;
+// }
+
+// if (program.getNonce) {
+//   getCurrentNonce(_options.wallet.address);
+//   return;
+// }
+
+var memo = "";
+var token = "SWT";
+var issuer = "";
+if (program.memo) {
+  memo = program.memo;
+}
+if (program.token) {
+  token = program.token;
+}
+if (program.issuer) {
+  issuer = program.issuer;
+}
+
+if (program.transfer) {
+  var amount = Number(program.amount);
+
+  if (isNaN(amount)) {
+    console.log("amount is", program.amount, "invalid");
+    process.exit();
+  }
+  transfer(program.transfer, token, issuer, amount, memo);
+  return;
+}
+
+if (program.createOrder) {
+  var amount = Number(program.amount);
+
+  if (isNaN(amount)) {
+    console.log("amount is", program.amount, "invalid");
+    process.exit();
+  }
+  if (!program.type || (program.type !== 'buy' && program.type !== 'sell')) {
+    console.log("invalid type", program.type);
+    process.exit();
+  }
+
+  createOrder(program.amount, _base, _counter, _sum, program.type, issuer);
+  return;
+}
+if (program.multi_create) {
+  createMultiSign();
+  return;
+}
+// function getMethodCall() {
+//   if (!program.parameters) {
+//     return 'sc.callABI("' + program.method + '")';
+//   }
+//   return 'sc.callABI("' + program.method + '",' + program.parameters + ")";
+// }
+
+// async function callContract() {
+//   let _json = getFile(program.abi);
+//   let abi = _json.abi;
+//   let sc = new utils.smartContract();
+//   sc.init(program.contractAddr, inst, abi);
+//   // 该变量是为用户在外部传入chain3的函数调用 eval(getMethodCall()) 时用的
+//   let web3 = inst._web3
+//   let namehash = eth_ens_namehash.hash
+
+//   // 确定接口类型
+//   const abiItem = abi.find((item) => item.name == program.method);
+//   if (!abiItem) {
+//     console.log("Can not find method", program.method, "in abi definition.");
+//     process.exit();
+//   }
+//   const { stateMutability } = abiItem;
+//   if (stateMutability === "view" || stateMutability === "pure") {
+//     const byte = await eval(getMethodCall());
+//     console.log("return value:", byte);
+//   } else {
+//     const calldata = await eval(getMethodCall());
+//     let amount = "0";
+//     if (program.amount) {
+//       amount = program.amount + "";
+//     }
+//     if (!!program.nonce) {
+//       _options.nonce = program.nonce;
+//     } else {
+//       _options.nonce = await getNonce(_options.wallet.address);
+//     }
+
+//     let gasPrice = await getGasPrice();
+//     let tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
+
+//     const hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
+//     console.log("hash:", hash);
+//     process.exit(0);
+//   }
+// }
+
+// if (program.abi) {
+//   if (!program.contractAddr || !program.method) {
+//     console.log("Please specify contract address, method and parameters");
+//     process.exit();
+//   }
+//   if (!program.parameters) {
+//     program.parameters = "";
+//   }
+
+//   callContract();
+//   return;
+// }

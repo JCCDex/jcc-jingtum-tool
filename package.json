@@ -1,0 +1,71 @@
+{
+  "name": "jcc-jingtum-tool",
+  "version": "0.0.10",
+  "description": "jccdex jcc jingtum tool",
+  "files": [
+    "lib"
+  ],
+  "main": "lib/index.js",
+  "scripts": {
+    "deploy": "./publish.sh",
+    "test": "gulp",
+    "pretty": "prettier --write {src,test}/**/*.{js,ts} erc20abi.json"
+  },
+  "bin": {
+    "jcc-jingtum-tool": "src/jcc-jingtum-tool"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JCCDex/jcc-jingtum-tool.git"
+  },
+  "keywords": [
+    "tool",
+    "console",
+    "jcc",
+    "jingtum",
+    "decentralized",
+    "cross-chain"
+  ],
+  "author": "JCCDex",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/JCCDex/jcc-jingtum-tool/issues"
+  },
+  "homepage": "https://github.com/JCCDex/jcc-jingtum-tool#readme",
+  "dependencies": {
+    "@swtc/common": "^1.0.11",
+    "bignumber.js": "^9.0.0",
+    "commander": "^2.20.0",
+    "fs": "0.0.1-security",
+    "jcc_exchange": "^3.1.12",
+    "jcc_wallet": "^1.0.5",
+    "readline-sync": "^1.4.10"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.3.3",
+    "@babel/plugin-transform-runtime": "^7.2.0",
+    "@babel/preset-env": "^7.3.1",
+    "@babel/runtime": "^7.4.2",
+    "babel-eslint": "^8.2.6",
+    "chai": "^4.2.0",
+    "coveralls": "^3.0.2",
+    "eslint-config-standard": "^11.0.0",
+    "eslint-plugin-import": "^2.16.0",
+    "eslint-plugin-node": "^7.0.1",
+    "eslint-plugin-promise": "^4.0.1",
+    "eslint-plugin-standard": "^3.1.0",
+    "gulp": "^4.0.0",
+    "gulp-babel": "^8.0.0",
+    "gulp-eslint": "^5.0.0",
+    "husky": "^3.1.0",
+    "mocha": "^5.2.0",
+    "nyc": "^14.1.1",
+    "prettier": "^1.19.1",
+    "pretty-quick": "^2.0.1"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "pretty-quick --staged"
+    }
+  }
+}
