@@ -13,6 +13,7 @@ const swtcSequence = require('jcc_exchange').swtcSequence;
 const exchangeInstance = require('jcc_exchange').exchangeInstance;
 var readlineSync = require("readline-sync");
 const { convertStringToHex, convertHexToString } = require("@swtc/common");
+const Remote = require("@swtc/rpc").Remote;
 
 function getBaseHome() {
   return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-jingtum-tool";
@@ -33,17 +34,19 @@ program.option("--keystore <keystore file>", "keystore file path");
 program.option("--password <keystore file password>", "keystore password");
 program.option("--show_secret", "show account secret");
 
+program.option("--balance <Wallet address>", "get balance of address");
+program.option("--server_info", "get rpc node info");
+
+program.option("--ledger <ledger type or number>", "get ledger info by number or validated,closed,current");
+program.option("--transaction <hash>", "get transaction by hash");
+program.option("--receipt <hash>", "get transaction receipt by hash");
+
 program.option("--multi_create <weight and account list>", "Create multisign wallet, like '2,accout,1,account,1'");
 
 program.option("--guess <string>", "format: s/a,b/Axu/c,b/ secret size is 29");
 
 program.option("--server <SWTC node address>", "node rpc address");
 
-program.option("--block <block number>", "get block info by number or latest");
-program.option("--transaction <hash>", "get transaction by hash");
-program.option("--receipt <hash>", "get transaction receipt by hash");
-
-program.option("--balance <Wallet address>", "get balance of address");
 program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--memo <string>", "memo pass by transaction");
 program.option("--token <string>", "token name, default is SWT");
@@ -277,10 +280,22 @@ if (program.guess) {
 //   _options.server = program.server;
 // }
 
-// async function getBalance() {
-//   let balance = await inst.getBalance(program.balance);
-//   console.log("balance:", balance);
-// }
+async function getBalance() {
+  let balance = await remote.getAccountBalances(program.balance);
+  if (!balance.balances) {
+    console.log("get", program.balance, "fail! something wrong unknown");
+    return;
+  }
+  balance.balances.forEach(token => {
+    console.log(JSON.stringify(token, null, 2));
+  });
+  console.log("account sequence:", balance.sequence);
+}
+
+async function getServerInfo() {
+  let info = await remote.rpcServerInfo();
+  console.log(JSON.stringify(info, null, 2));
+}
 // async function getCurrentNonce(address) {
 //   let nonce = await inst.getNonce(address);
 //   console.log("current nonce:", nonce.toString());
@@ -293,10 +308,13 @@ if (program.guess) {
 //   return _options.gasPrice;
 // }
 
-// async function getBlock(block) {
-//   let info = await inst.getBlock(block);
-//   console.log("block:", JSON.stringify(info, null, 2));
-// }
+async function getLedger(ledger) {
+  if (!isNaN(ledger)) {
+    ledger = Number(ledger);
+  }
+  let info = await remote.rpcLedger({ ledger_index: ledger });
+  console.log("ledger:", JSON.stringify(info, null, 2));
+}
 
 // async function getTransaction(hash) {
 //   let info = await inst.getTransaction(hash);
@@ -544,11 +562,12 @@ if (program.show_secret) {
   return;
 }
 // 初始化连接
-let inst = JCCExchange.init([_options.server]);
+// let inst = JCCExchange.init([_options.server]);
+let remote = new Remote({ server: _options.server });
+// console.log("server config:\n", JSON.stringify(remote.config(), null, 2));
 
-if (program.block) {
-  // getBlock(program.block);
-  console.log("TODO: get block info");
+if (program.ledger) {
+  getLedger(program.ledger);
   return;
 }
 
@@ -564,10 +583,15 @@ if (program.receipt) {
   return;
 }
 
-// if (program.balance) {
-//   getBalance();
-//   return;
-// }
+if (program.server_info) {
+  getServerInfo();
+  return;
+}
+
+if (program.balance) {
+  getBalance();
+  return;
+}
 
 // if (program.getNonce) {
 //   getCurrentNonce(_options.wallet.address);
