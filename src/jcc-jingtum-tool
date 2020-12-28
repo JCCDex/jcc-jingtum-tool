@@ -256,7 +256,7 @@ if (program.guess) {
   }
 
   console.log('tries:', tries, 'file size:', (30 * tries / 1024) + 'k');
-  if (tries > 100000) {
+  if (tries > 10000000) {
     console.log('Too many tries, abort');
     return;
   }
