@@ -51,31 +51,44 @@ jcc-jingtum-tool --wallet_create --save_wallet
 jcc-jingtum-tool --import_private_to_keystore
 ```
 
-- 获取余额
+- 查询 rpc 节点信息
 
 ```javascript
-jcc-jingtum-tool --balance jxxxx
-```
-
-- 转账
-
-```javascript
-# 从配置 (config.json) 的钱包向目的地址转账
-jcc-jingtum-tool --transfer jxxx --amount 0.000001
+jcc-jingtum-tool --server_info
 ```
 
 - 查询区块
 
 ```javascript
-jcc-jingtum-tool --block latest
-或者
-jcc-jingtum-tool --block 1234
+jcc-jingtum-tool --ledger 22622884
+jcc-jingtum-tool --ledger current
+jcc-jingtum-tool --ledger closed
 ```
 
 - 查询交易
 
 ```javascript
 jcc-jingtum-tool --transaction AABBe089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b5dfec4337f5fb4f58e
+```
+
+- 获取余额
+
+```javascript
+jcc-jingtum-tool --balance jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew
+```
+
+- 获取账号状态
+
+```javascript
+jcc-jingtum-tool --account_info jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew
+```
+
+- 转账
+
+```javascript
+# 从配置 (config.json) 的钱包向目的地址转账
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.000001
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.000001 --token JSLASH --memo "test"
 ```
 
 - 创建多签名钱包
@@ -86,18 +99,59 @@ jcc-jingtum-tool --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "
 
 # 删除多签名钱包
 jcc-jingtum-tool --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "0"
+
+# 通过多签的方式删除多签钱包
+jcc-jingtum-tool --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "0" --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+
+jcc-jingtum-tool --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "0" --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+
+jcc-jingtum-tool --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "0" --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+
+# 随后可以将s1.json s2.json s3.json文件名作为参数 执行 --multi_sign_commit
+
+# 获取多签名状态
+jcc-jingtum-tool --get_multi jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+
 ```
 
 - 多签名转账
 
 ```javascript
 # 多签名钱包生成签名内容
-jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json --memo "jcc-jingtum-tool"
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.000001 --token JSLASH --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
 
-jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json --memo "jcc-jingtum-tool"
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.000001 --token JSLASH --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
 
-jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json --memo "jcc-jingtum-tool"
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.000001 --token JSLASH --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+
+# 转SWT
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
 
 # 多签名交易执行
-jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --multi_sign --signers "s1.json,s2.json,s3.json"  --memo "jcc-jingtum-tool"
+jcc-jingtum-tool --multi_sign_commit "s1.json,s2.json,s3.json"
+```
+
+- 多签名启用禁用主密钥
+
+```javascript
+# 多签名钱包生成签名内容
+jcc-jingtum-tool --disable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+
+jcc-jingtum-tool --disable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+
+jcc-jingtum-tool --disable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+
+# 转SWT
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+
+jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+
+# 多签名交易执行
+jcc-jingtum-tool --multi_sign_commit "s1.json,s2.json,s3.json"
 ```

@@ -5,15 +5,11 @@ const fs = require("fs");
 const BigNumber = require("bignumber.js");
 const JingchangWallet = require('jcc_wallet').JingchangWallet
 const jtWallet = require('jcc_wallet').jtWallet
-const JCCExchange = require('jcc_exchange').JCCExchange;
-const Tx = require('jcc_exchange').Tx;
-const signTransaction = require('jcc_exchange').sign;
-const multiSignTransaction = require('jcc_exchange').multiSign;
-const swtcSequence = require('jcc_exchange').swtcSequence;
-const exchangeInstance = require('jcc_exchange').exchangeInstance;
 var readlineSync = require("readline-sync");
 const { convertStringToHex, convertHexToString } = require("@swtc/common");
+const { createCipheriv } = require("crypto");
 const Remote = require("@swtc/rpc").Remote;
+const Transaction = require("@swtc/transaction").Transaction
 
 function getBaseHome() {
   return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-jingtum-tool";
@@ -34,30 +30,39 @@ program.option("--keystore <keystore file>", "keystore file path");
 program.option("--password <keystore file password>", "keystore password");
 program.option("--show_secret", "show account secret");
 
+program.option("--server <SWTC node address>", "node rpc address");
+
 program.option("--balance <Wallet address>", "get balance of address");
 program.option("--server_info", "get rpc node info");
+program.option("--account_info <Wallet address>", "get account info");
 
 program.option("--ledger <ledger type or number>", "get ledger info by number or validated,closed,current");
 program.option("--transaction <hash>", "get transaction by hash");
-program.option("--receipt <hash>", "get transaction receipt by hash");
-
-program.option("--multi_create <weight and account list>", "Create multisign wallet, like '2,accout,1,account,1'");
-
-program.option("--guess <string>", "format: s/a,b/Axu/c,b/ secret size is 29");
-
-program.option("--server <SWTC node address>", "node rpc address");
 
 program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--memo <string>", "memo pass by transaction");
 program.option("--token <string>", "token name, default is SWT");
 program.option("--issuer <string>", "issuer account, default is empty");
 program.option("--amount <amount>", "transfer amount");
-program.option("--get_sign", "show signed tx");
-program.option("--save_sign <filename>", "save signed content for multi sign");
-program.option("--multi_sign", "multi sign flag");
+
+program.option("--multi_create <weight and account list>", "Create multisign wallet, like '2,accout,1,account,1'");
+// TODO: disable origin secret
+program.option("--get_multi <account>", "get multi signer in account");
 program.option("--sign_for <string>", "sign for account by multi-sign");
-program.option("--multi_sign_commit", "multi sign commit flag");
-program.option("--signers <signers file path>", "signer1 file, signer2 file");
+program.option("--multi_sign <true>", "multi sign flag");
+program.option("--save_sign <filename>", "save signed content for multi sign");
+
+// 读取签名并提交
+program.option("--multi_sign_commit <signers file path>", "multi sign commit, signed tx file parameters like 'signer1 file, signer2 file'");
+
+// 禁止和激活密钥
+program.option("--disable_secret", "disable secret");
+program.option("--enable_secret", "enable secret");
+
+
+program.option("--guess <string>", "format: s/a,b/Axu/c,b/ secret size is 29");
+
+program.option("--get_sign", "show signed tx");
 
 program.option("--createOrder", "create order flag");
 program.option("--type <buy/sell>", "buy or sell");
@@ -270,18 +275,9 @@ if (program.guess) {
     console.log("Well, Got nothing.")
   }
 }
-// if (!isNaN(Number(program.gas_limit))) {
-//   _options.gasLimit = Number(program.gas_limit);
-// }
-// if (!isNaN(Number(program.gas_price))) {
-//   _options.gasPrice = Number(program.gas_price);
-// }
-// if (!!program.server) {
-//   _options.server = program.server;
-// }
 
 async function getBalance() {
-  let balance = await remote.getAccountBalances(program.balance);
+  let balance = await getRemote().getAccountBalances(program.balance);
   if (!balance.balances) {
     console.log("get", program.balance, "fail! something wrong unknown");
     return;
@@ -293,7 +289,12 @@ async function getBalance() {
 }
 
 async function getServerInfo() {
-  let info = await remote.rpcServerInfo();
+  let info = await getRemote().rpcServerInfo();
+  console.log(JSON.stringify(info, null, 2));
+}
+
+async function getAccountInfo(account) {
+  let info = await getRemote().getAccountInfo(account);
   console.log(JSON.stringify(info, null, 2));
 }
 // async function getCurrentNonce(address) {
@@ -312,26 +313,18 @@ async function getLedger(ledger) {
   if (!isNaN(ledger)) {
     ledger = Number(ledger);
   }
-  let info = await remote.rpcLedger({ ledger_index: ledger });
+  let info = await getRemote().rpcLedger({ ledger_index: ledger });
   console.log("ledger:", JSON.stringify(info, null, 2));
 }
 
-// async function getTransaction(hash) {
-//   let info = await inst.getTransaction(hash);
-//   console.log("transaction:", JSON.stringify(info, null, 2));
-// }
-
-// async function getTransactionReceipt(hash) {
-//   let info = await inst.getTransactionReceipt(hash);
-//   console.log("transaction receipt:", JSON.stringify(info, null, 2));
-// }
-// async function getNonce(address) {
-//   if (!program.nonce) {
-//     let n = await inst.getNonce(_options.wallet.address);
-//     return n;
-//   }
-//   return program.nonce;
-// }
+async function getTransaction(hash) {
+  try {
+    let info = await getRemote().rpcTx({transaction: hash});
+    console.log("transaction:", JSON.stringify(info, null, 2));
+  }catch(e) {
+    console.log(e);
+  }
+}
 
 function tx_filter_multisign(tx) {
   tx.Fee = 80000;
@@ -366,65 +359,66 @@ function getSignerTx(tx) {
   return signer;
 }
 
-// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 0.001 --get_sign
-// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
-// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
-// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --get_sign --multi_sign --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
-// src/jcc-jingtum-tool --transfer jN1UW7pH3DXNhtEPqG2fbQ7swV1BRh2nQ2 --amount 1 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --multi_sign --signers "s1.json,s2.json,s3.json" 
-async function transfer(_dest, _token, _issuer, _amount, _memo) {
-  await getWalletFromKeystore();
-  let tx = Tx.serializePayment(
-    !program.sign_for ? _options.wallet.address : program.sign_for,
-    _amount, _dest, _token, _memo, _issuer);
-
-  let seq = await swtcSequence.get(
-    JCCExchange.getSequence,
-    !program.sign_for ? _options.wallet.address : program.sign_for);
-  tx.Sequence = seq;
-
-  if (!program.multi_sign) {
-
-    let signed = signTransaction(tx, _options.wallet.secret, "jingtum", true);
-
-    if (program.get_sign) {
-      console.log(JSON.stringify(signed, null, 2), JSON.stringify(tx, null, 2));
-      process.exit(0);
-    }
-    const inst = exchangeInstance.init(JCCExchange.urls);
-    let hash = await JCCExchange.sendRawTransaction(signed.blob, inst.sendRawTransaction.bind(inst));
-
-    console.log("transfer hash:", hash);
-  } else {
-    if (!!program.signers) {
-      tx.Signers = await getSinger();
-    }
-
-    let signer = getSignerTx(tx);
-
-    if (program.get_sign) {
-      console.log(JSON.stringify(signer, null, 2));
-      if (!!program.save_sign) {
-        try {
-          fs.writeFileSync(program.save_sign, JSON.stringify(signer, null, 0));
-        } catch (e) {
-          console.log("save file fail!", e);
-          process.exit();
-        }
-      }
-      process.exit(0);
-    }
-
-    // 交易发送 Fee 取多签最大值，不需要除以100万
-    tx = tx_filter_multisign(tx);
-
-    const inst = exchangeInstance.init(JCCExchange.urls);
-
-    // 多签需要json不是blob
-    let hash = await JCCExchange.sendRawTransaction(tx, inst.submit_multisigned.bind(inst));
-
-    console.log("transfer hash:", hash);
+async function getAccountSequence(account) {
+  try {
+    let ret = await getRemote().getAccountSequence(account);
+    return ret;
+  }catch(e) {
+    console.log(e);
   }
-  process.exit(0);
+}
+
+function emptyCallback(...args) {
+  return;
+}
+
+async function getTransferTx(_source, _dest, _token, _issuer, _amount, _memo) {
+  await getWalletFromKeystore();
+  let amount = _token === "SWT" ? {value: _amount, currency: 'SWT', issuer: ''} : {value: _amount, currency: _token, issuer: _issuer === "" ? "jGa9J9TkqtBcUoHe2zqhVFFbgUVED6o9or" : _issuer}
+  let tx = Transaction.buildPaymentTx({source: _source, to: _dest, amount: amount});
+  tx.addMemo(_memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function transfer(_dest, _token, _issuer, _amount, _memo) {
+  let tx = await getTransferTx(_options.wallet.address, _dest, _token, _issuer, _amount, _memo);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  try{
+    let ret = await getRemote().rpcSubmit({tx_blob: tx.tx_json.blob});
+    if (ret.engine_result === "tesSUCCESS") {
+      console.log("hash:", ret.tx_json.hash);
+    }else{
+      console.log(ret);
+    }
+  }catch(e){
+    console.log(e);
+  }
+}
+
+async function transfer_multi_sign(_dest, _token, _issuer, _amount, _memo) {
+  let tx = await getTransferTx(program.sign_for, _dest, _token, _issuer, _amount, _memo);
+
+  let seq = await getAccountSequence(program.sign_for);
+  tx.setSequence(seq);
+  let signed  = Transaction.buildSignFirstTx({tx: tx, secret: _options.wallet.secret, address: _options.wallet.address});
+  console.log(JSON.stringify(signed, null, 2));
+
+  if (!!program.save_sign) {
+    try {
+      fs.writeFileSync(program.save_sign, JSON.stringify(signed.tx_json, null, 0));
+      console.log("multi signed by", _options.wallet.address, "is saved to", program.save_sign);
+    } catch (e) {
+      console.log("save file fail!", e);
+      process.exit();
+    }
+  }
 }
 
 async function createOrder(_amount, _base, _counter, _sum, _type, _issuer) {
@@ -442,12 +436,19 @@ async function createOrder(_amount, _base, _counter, _sum, _type, _issuer) {
 
   } else { }
 }
-// src/jcc-jingtum-tool --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "2,jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt,1,jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv,1,jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA,1"
-// src/jcc-jingtum-tool --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy  --multi_create "0"
-async function createMultiSign() {
-  await getWalletFromKeystore();
+
+async function getMultiSigner() {
+  let ret = await getRemote().getAccountSignerList(program.get_multi);
+  if (ret.account_objects !== null) {
+    console.log("multi sign list:", ret.account_objects[0].SignerEntries);    
+  }else{
+    console.log(program.get_multi, "is not multi sign account.");    
+  }
+}
+
+async function getCreateMultiSignTx(address) {
   let parameters = program.multi_create.split(',');
-  // console.log(parameters);
+
   if (isNaN(parameters[0])) {
     console.log("quorum must be number", parameters[0]);
     process.exit();
@@ -464,93 +465,62 @@ async function createMultiSign() {
   }
   let weigths = [];
   for (var i = 1; i < parameters.length - 1; i++, i++) {
-    weigths[(i - 1) / 2] = { SignerEntry: { Account: parameters[i], SignerWeight: Number(parameters[i + 1]) } };
+    weigths[(i - 1) / 2] = { account: parameters[i], weight: Number(parameters[i + 1]) };
   }
+  let options = quorum ? {account: address, threshold: quorum, lists: weigths}:{account: address, threshold: quorum}
+  let tx = Transaction.buildSignerListTx(options);
+  tx.setFee(10);
 
-  let tx = Tx.serializeSignerList(_options.wallet.address, quorum, weigths);
-  let seq = await swtcSequence.get(JCCExchange.getSequence, _options.wallet.address);
-  tx.Sequence = seq;
-  let signed = signTransaction(tx, _options.wallet.secret, "jingtum", true);
-  if (program.get_sign) {
-    console.log(JSON.stringify(signed, null, 2));
-    process.exit(0);
+  return tx;
+}
+async function createMultiSign_multi_sign() {
+  await getWalletFromKeystore();
+  let tx = await getCreateMultiSignTx(program.sign_for);
+
+  let seq = await getAccountSequence(program.sign_for);
+  tx.setSequence(seq);
+  
+  let signed  = Transaction.buildSignFirstTx({tx: tx, secret: _options.wallet.secret, address: _options.wallet.address});
+  console.log(JSON.stringify(signed, null, 2));
+
+  if (!!program.save_sign) {
+    try {
+      fs.writeFileSync(program.save_sign, JSON.stringify(signed.tx_json, null, 0));
+      console.log("multi signed by", _options.wallet.address, "is saved to", program.save_sign);
+    } catch (e) {
+      console.log("save file fail!", e);
+      process.exit();
+    }
   }
-
-  const inst = exchangeInstance.init(JCCExchange.urls);
-  let hash = await JCCExchange.sendRawTransaction(signed.blob, inst.sendRawTransaction.bind(inst));
-
-  console.log("create multi sign hash:", hash);
 }
 
-// const sleep = (milliseconds) => {
-//   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-// };
+async function createMultiSign() {
+  await getWalletFromKeystore();
+  let tx = await getCreateMultiSignTx(_options.wallet.address);
+  tx.setSecret(_options.wallet.secret);
 
-// function getFile(filename) {
-//   if (!fs.existsSync(filename)) {
-//     filename = __dirname + "/" + filename;
-//     if (!fs.existsSync(filename)) {
-//       console.log("can not find ", filename);
-//       process.exit();
-//     }
-//   }
-//   try {
-//     return JSON.parse(fs.readFileSync(filename, "utf-8"));
-//   } catch (e) {
-//     console.log("get file ", filename, "error", e);
-//     process.exit(-1);
-//   }
-// }
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
 
-// async function deploy(compiledJson) {
-//   let _json = getFile(compiledJson);
-//   if (!_json.bytecode) {
-//     console.log("can not get byte code");
-//     process.exit(-1);
-//   }
+  console.log(tx);
 
-//   let abi = _json.abi;
-//   let constructor = abi.find((item) => item.type == "constructor");
-//   if (!constructor) {
-//     console.log("Can not find constructor in file", compiledJson, ", Please check it!");
-//   }
-//   if (constructor.inputs.length > 0 && !program.parameters) {
-//     console.log("miss --parameter arguments");
-//     process.exit();
-//   }
-//   let calldata;
-//   if (constructor.inputs.length == 0) {
-//     program.parameters = [];
-//     calldata = _json.bytecode;
-//   } else {
-//     const typename = constructor.inputs.map((input) => input.type);
-//     calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
-//   }
-//   let nonce = await getNonce(_options.wallet.address);
-//   let gasPrice = await getGasPrice();
-//   let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
-//   let signed = await inst.signTransaction(tx, _options.wallet.secret);
-//   let hash;
-//   try {
-//     hash = await inst.sendSignedTransaction(signed);
-//   } catch (e) {
-//     console.log(e);
-//     process.exit(-1);
-//   }
-//   console.log("create contract transaction hash:", hash);
-//   console.log("waiting for contract address.......");
-//   for (var i = 0; i < 20; i++) {
-//     await sleep(2000);
-//     let receipt = await inst.getTransactionReceipt(hash);
-//     if (receipt && receipt.contractAddress) {
-//       console.log("create contract", receipt.status ? "success" : "fail", "\ncontract address:", receipt.contractAddress);
-//       process.exit(0);
-//       return;
-//     }
-//   }
+  try{
+    let ret = await getRemote().rpcSubmit({tx_blob: tx.tx_json.blob});
+    if (ret.engine_result === "tesSUCCESS") {
+      console.log("hash:", ret.tx_json.hash);
+    }else{
+      console.log(ret);
+    }
+  }catch(e){
+    console.log(e);
+  }
+}
 
-//   console.log("can not get contract address, try get transaction receipt later");
-// }
+const sleep = (milliseconds) => {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+};
+
 async function showSecret() {
   await getWalletFromKeystore();
   console.log(_options.wallet);
@@ -561,10 +531,19 @@ if (program.show_secret) {
   showSecret();
   return;
 }
+
 // 初始化连接
-// let inst = JCCExchange.init([_options.server]);
-let remote = new Remote({ server: _options.server });
-// console.log("server config:\n", JSON.stringify(remote.config(), null, 2));
+let remote = null;
+function createRemote() {
+  remote = new Remote({ server: _options.server });
+}
+
+function getRemote() {
+  if (!remote) {
+    createRemote();
+  }
+  return remote;
+}
 
 if (program.ledger) {
   getLedger(program.ledger);
@@ -572,14 +551,7 @@ if (program.ledger) {
 }
 
 if (program.transaction) {
-  // getTransaction(program.transaction);
-  console.log("TODO: get transaction info");
-  return;
-}
-
-if (program.receipt) {
-  // getTransactionReceipt(program.receipt);
-  console.log("TODO: get receipt info");
+  getTransaction(program.transaction);
   return;
 }
 
@@ -588,15 +560,16 @@ if (program.server_info) {
   return;
 }
 
+if (program.account_info) {
+  getAccountInfo(program.account_info);
+  return;
+}
+
+
 if (program.balance) {
   getBalance();
   return;
 }
-
-// if (program.getNonce) {
-//   getCurrentNonce(_options.wallet.address);
-//   return;
-// }
 
 var memo = "";
 var token = "SWT";
@@ -618,7 +591,12 @@ if (program.transfer) {
     console.log("amount is", program.amount, "invalid");
     process.exit();
   }
-  transfer(program.transfer, token, issuer, amount, memo);
+
+  if (!program.sign_for) {
+    transfer(program.transfer, token, issuer, amount, memo);
+  }else{
+    transfer_multi_sign(program.transfer, token, issuer, amount, memo);
+  }
   return;
 }
 
@@ -637,8 +615,143 @@ if (program.createOrder) {
   createOrder(program.amount, _base, _counter, _sum, program.type, issuer);
   return;
 }
+
+function validTxs(txs) {
+  if (txs.length < 2) return true;
+  for (var i = 0; i < txs.length - 1; i++) {
+    let a = JSON.stringify(txs[i]);
+    let b = JSON.stringify(txs[i+1]);
+    if ( a !== b) return false;
+  }
+
+  return true;
+}
+
 if (program.multi_create) {
-  createMultiSign();
+  if (!program.sign_for) {
+    createMultiSign();
+  }else{
+    createMultiSign_multi_sign();
+  }
+  return;
+}
+
+if (program.get_multi) {
+  getMultiSigner();
+  return;
+}
+
+async function submitMultiSign(tx) {
+  try {
+    // 还原Fee
+    if (tx.tx_json.Fee < 10) {
+      tx.tx_json.Fee = tx.tx_json.Fee * 1000000;
+    }
+    // 还原SWT的数量表达
+    if (!isNaN(Number(tx.tx_json.Amount))) {
+      tx.tx_json.Amount = tx.tx_json.Amount * 1000000;
+    }
+
+    let ret = await getRemote().rpcSubmitMultisigned({tx_json: tx.tx_json});
+    console.log(ret);  
+  }catch(e){
+    console.log(e);
+  }
+}
+
+if (program.multi_sign_commit) {
+  // 获取所有交易签名和交易
+  let files = program.multi_sign_commit.split(',');
+  let signers = [];
+  let txs = [];
+  for (var i = 0; i < files.length; i++) {
+    try {
+      txs[i] = JSON.parse(fs.readFileSync(files[i], "utf-8"));
+      signers[i] = txs[i].Signers[0];
+      delete txs[i].Signers;
+    } catch (e) {
+      console.log("Parse config file fail, check and correct it", e);
+      process.exit();
+    }
+  }
+
+  // 比较所有tx是否一致
+  if (!validTxs(txs)) {
+    console.log("multi signed tx not same:", JSON.stringify(txs, null, 2));
+    return;
+  }
+  let tx_json = txs[0];
+  tx_json.Signers = signers;
+  let finalTx = Transaction.buildMultisignedTx(tx_json);
+  
+  submitMultiSign(finalTx);
+
+  return;
+}
+async function buildAccountTx(account, disable) {
+  let options = {}
+  if (disable) {
+    options = {account: account, type: 'property', set_flag: 4};
+  }else{
+    options = {account: account, type: 'property', clear_flag: 4};
+  }
+  let tx = Transaction.buildAccountSetTx(options);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function disableSecret(flag) {
+  await getWalletFromKeystore();
+  let account = flag ? _options.wallet.address : program.sign_for;
+  let tx = await buildAccountTx(account, flag);
+
+  let seq = await getAccountSequence(account);
+  tx.setSequence(seq);
+  if (flag) {
+    tx.setSecret(_options.wallet.secret);
+    tx.sign(emptyCallback);
+
+    try{
+      let ret = await getRemote().rpcSubmit({tx_blob: tx.tx_json.blob});
+      if (ret.engine_result === "tesSUCCESS") {
+        console.log("hash:", ret.tx_json.hash);
+      }else{
+        console.log(ret);
+      }
+    }catch(e){
+      console.log(e);
+    }
+  
+    return;
+  }
+  
+  let signed  = Transaction.buildSignFirstTx({tx: tx, secret: _options.wallet.secret, address: _options.wallet.address});
+  console.log(JSON.stringify(signed, null, 2));
+
+  if (!!program.save_sign) {
+    try {
+      fs.writeFileSync(program.save_sign, JSON.stringify(signed.tx_json, null, 0));
+      console.log("multi signed by", _options.wallet.address, "is saved to", program.save_sign);
+    } catch (e) {
+      console.log("save file fail!", e);
+      process.exit();
+    }
+  }
+}
+
+if (program.disable_secret) {
+  disableSecret(true);
+  return;
+}
+if (program.enable_secret) {
+  // TODO: 完善取消多签钱包时候需要检查密钥是否启用
+  if (!program.sign_for) {
+    console.log("We must enable master secret by multi sign");
+    return;
+  }
+
+  disableSecret(false);
   return;
 }
 // function getMethodCall() {
