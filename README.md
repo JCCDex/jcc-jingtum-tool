@@ -83,6 +83,10 @@ jcc-jingtum-tool --balance jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew
 jcc-jingtum-tool --account_info jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew
 ```
 
+- 获取账号的 seq
+
+可以通过-seq 参数指定交易的 seq,否则 seq 通过 getSeq 从链上查询
+
 - 转账
 
 ```javascript
@@ -138,20 +142,27 @@ jcc-jingtum-tool --multi_sign_commit "s1.json,s2.json,s3.json"
 - 多签名启用禁用主密钥
 
 ```javascript
-# 多签名钱包生成签名内容
-jcc-jingtum-tool --disable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+# 使用主密钥禁用
+jcc-jingtum-tool --disable_secret --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
 
-jcc-jingtum-tool --disable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+# 使用多签启用主密钥
+jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
 
-jcc-jingtum-tool --disable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
 
-# 转SWT
-jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+```
 
-jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+- 挂单
 
-jcc-jingtum-tool --transfer jLyU8xB3D2VyjYkrVBU6XoW2Z9Qe9t2Xew --amount 0.1 --memo "test multi sign" --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+```javascript
+# 挂单
+jcc-jingtum-tool --create_order --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
 
-# 多签名交易执行
-jcc-jingtum-tool --multi_sign_commit "s1.json,s2.json,s3.json"
+# 使用多签启用主密钥
+jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+
+jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+
+jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
 ```

@@ -44,9 +44,10 @@ program.option("--memo <string>", "memo pass by transaction");
 program.option("--token <string>", "token name, default is SWT");
 program.option("--issuer <string>", "issuer account, default is empty");
 program.option("--amount <amount>", "transfer amount");
+program.option("--seq <number>", "specified sequence");
+program.option("--getSeq <account>", "get current sequence");
 
 program.option("--multi_create <weight and account list>", "Create multisign wallet, like '2,accout,1,account,1'");
-// TODO: disable origin secret
 program.option("--get_multi <account>", "get multi signer in account");
 program.option("--sign_for <string>", "sign for account by multi-sign");
 program.option("--multi_sign <true>", "multi sign flag");
@@ -62,13 +63,9 @@ program.option("--enable_secret", "enable secret");
 
 program.option("--guess <string>", "format: s/a,b/Axu/c,b/ secret size is 29");
 
-program.option("--get_sign", "show signed tx");
-
 program.option("--createOrder", "create order flag");
 program.option("--type <buy/sell>", "buy or sell");
 
-program.option("--nonce <number>", "specified nonce");
-program.option("--getNonce", "get current nonce");
 // program.option("--gas_price <number>", "specified gasPrice, default 10000000000");
 // program.option("--gas_limit <number>", "specified gas limit, default 50000");
 
@@ -169,7 +166,7 @@ async function getWalletFromKeystoreFile(_file, _password) {
       } else {
         password = _password;
       }
-
+      
       let inst = new JingchangWallet(ks);
       let w = { address: await inst.getAddress(), secret: await inst.getSecretWithType(password) };
       return w;
@@ -297,17 +294,6 @@ async function getAccountInfo(account) {
   let info = await getRemote().getAccountInfo(account);
   console.log(JSON.stringify(info, null, 2));
 }
-// async function getCurrentNonce(address) {
-//   let nonce = await inst.getNonce(address);
-//   console.log("current nonce:", nonce.toString());
-// }
-
-// async function getGasPrice() {
-//   if (!_options.gasPrice) {
-//     _options.gasPrice = await inst.getGasPrice();
-//   }
-//   return _options.gasPrice;
-// }
 
 async function getLedger(ledger) {
   if (!isNaN(ledger)) {
@@ -326,42 +312,14 @@ async function getTransaction(hash) {
   }
 }
 
-function tx_filter_multisign(tx) {
-  tx.Fee = 80000;
-  if (tx.Amount && !isNaN(tx.Amount)) {
-    tx.Amount = (Number(tx.Amount) * 1000000) + "";
-  }
-  if (tx.TakerPays && !isNaN(tx.TakerPays)) {
-    tx.TakerPays = (Number(tx.TakerPays) * 1000000) + "";
-  }
-  if (tx.TakerGets && !isNaN(tx.TakerGets)) {
-    tx.TakerGets = (Number(tx.TakerGets) * 1000000) + "";
-  }
-  if (tx.Memos) {
-    for (const memo of tx.Memos) {
-      if (memo.Memo.MemoType) {
-        memo.Memo.MemoType = convertStringToHex(memo.Memo.MemoType);
-      }
-      memo.Memo.MemoData = convertStringToHex(memo.Memo.MemoData);
-    }
-  }
-  return tx;
-}
-function getSignerTx(tx) {
-  let signer;
-  if (!!program.signers) {
-    tx.SigningPubKey = "";
-    delete tx.TxnSignature;
-    signer = tx;
-  } else {
-    signer = multiSignTransaction(tx, _options.wallet.secret, "jingtum", true);
-  }
-  return signer;
-}
-
 async function getAccountSequence(account) {
   try {
-    let ret = await getRemote().getAccountSequence(account);
+    let ret = -1;
+    if (program.seq === undefined) {
+      ret = await getRemote().getAccountSequence(account);
+    }else{
+      ret = program.seq;
+    }
     return ret;
   }catch(e) {
     console.log(e);
@@ -402,9 +360,7 @@ async function transfer(_dest, _token, _issuer, _amount, _memo) {
   }
 }
 
-async function transfer_multi_sign(_dest, _token, _issuer, _amount, _memo) {
-  let tx = await getTransferTx(program.sign_for, _dest, _token, _issuer, _amount, _memo);
-
+async function _buildMultiSign(tx) {
   let seq = await getAccountSequence(program.sign_for);
   tx.setSequence(seq);
   let signed  = Transaction.buildSignFirstTx({tx: tx, secret: _options.wallet.secret, address: _options.wallet.address});
@@ -419,6 +375,11 @@ async function transfer_multi_sign(_dest, _token, _issuer, _amount, _memo) {
       process.exit();
     }
   }
+}
+
+async function transfer_multi_sign(_dest, _token, _issuer, _amount, _memo) {
+  let tx = await getTransferTx(program.sign_for, _dest, _token, _issuer, _amount, _memo);
+  await _buildMultiSign(tx);
 }
 
 async function createOrder(_amount, _base, _counter, _sum, _type, _issuer) {
@@ -477,21 +438,16 @@ async function createMultiSign_multi_sign() {
   await getWalletFromKeystore();
   let tx = await getCreateMultiSignTx(program.sign_for);
 
-  let seq = await getAccountSequence(program.sign_for);
-  tx.setSequence(seq);
-  
-  let signed  = Transaction.buildSignFirstTx({tx: tx, secret: _options.wallet.secret, address: _options.wallet.address});
-  console.log(JSON.stringify(signed, null, 2));
-
-  if (!!program.save_sign) {
-    try {
-      fs.writeFileSync(program.save_sign, JSON.stringify(signed.tx_json, null, 0));
-      console.log("multi signed by", _options.wallet.address, "is saved to", program.save_sign);
-    } catch (e) {
-      console.log("save file fail!", e);
-      process.exit();
+  // 检查是否是删除多签
+  if (tx.tx_json.SignerQuorum === 0) {
+    let info = await getRemote().getAccountInfo(program.sign_for);
+    if (info.account_data.Flags !== 0) {
+      console.log("enable account master key first!!!\n", info);
+      return;
     }
   }
+
+  await _buildMultiSign(tx);
 }
 
 async function createMultiSign() {
@@ -565,12 +521,19 @@ if (program.account_info) {
   return;
 }
 
-
 if (program.balance) {
   getBalance();
   return;
 }
+async function getSeq(account) {
+  let seq = await getAccountSequence(account);
+  console.log("account", account, "current sequence is", seq);
+}
 
+if (program.getSeq) {
+  getSeq(program.getSeq);
+  return;
+}
 var memo = "";
 var token = "SWT";
 var issuer = "";
@@ -706,9 +669,9 @@ async function disableSecret(flag) {
   let account = flag ? _options.wallet.address : program.sign_for;
   let tx = await buildAccountTx(account, flag);
 
-  let seq = await getAccountSequence(account);
-  tx.setSequence(seq);
   if (flag) {
+    let seq = await getAccountSequence(account);
+    tx.setSequence(seq);
     tx.setSecret(_options.wallet.secret);
     tx.sign(emptyCallback);
 
@@ -726,18 +689,7 @@ async function disableSecret(flag) {
     return;
   }
   
-  let signed  = Transaction.buildSignFirstTx({tx: tx, secret: _options.wallet.secret, address: _options.wallet.address});
-  console.log(JSON.stringify(signed, null, 2));
-
-  if (!!program.save_sign) {
-    try {
-      fs.writeFileSync(program.save_sign, JSON.stringify(signed.tx_json, null, 0));
-      console.log("multi signed by", _options.wallet.address, "is saved to", program.save_sign);
-    } catch (e) {
-      console.log("save file fail!", e);
-      process.exit();
-    }
-  }
+  await  _buildMultiSign(tx);
 }
 
 if (program.disable_secret) {
@@ -745,7 +697,6 @@ if (program.disable_secret) {
   return;
 }
 if (program.enable_secret) {
-  // TODO: 完善取消多签钱包时候需要检查密钥是否启用
   if (!program.sign_for) {
     console.log("We must enable master secret by multi sign");
     return;
@@ -754,62 +705,3 @@ if (program.enable_secret) {
   disableSecret(false);
   return;
 }
-// function getMethodCall() {
-//   if (!program.parameters) {
-//     return 'sc.callABI("' + program.method + '")';
-//   }
-//   return 'sc.callABI("' + program.method + '",' + program.parameters + ")";
-// }
-
-// async function callContract() {
-//   let _json = getFile(program.abi);
-//   let abi = _json.abi;
-//   let sc = new utils.smartContract();
-//   sc.init(program.contractAddr, inst, abi);
-//   // 该变量是为用户在外部传入chain3的函数调用 eval(getMethodCall()) 时用的
-//   let web3 = inst._web3
-//   let namehash = eth_ens_namehash.hash
-
-//   // 确定接口类型
-//   const abiItem = abi.find((item) => item.name == program.method);
-//   if (!abiItem) {
-//     console.log("Can not find method", program.method, "in abi definition.");
-//     process.exit();
-//   }
-//   const { stateMutability } = abiItem;
-//   if (stateMutability === "view" || stateMutability === "pure") {
-//     const byte = await eval(getMethodCall());
-//     console.log("return value:", byte);
-//   } else {
-//     const calldata = await eval(getMethodCall());
-//     let amount = "0";
-//     if (program.amount) {
-//       amount = program.amount + "";
-//     }
-//     if (!!program.nonce) {
-//       _options.nonce = program.nonce;
-//     } else {
-//       _options.nonce = await getNonce(_options.wallet.address);
-//     }
-
-//     let gasPrice = await getGasPrice();
-//     let tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
-
-//     const hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
-//     console.log("hash:", hash);
-//     process.exit(0);
-//   }
-// }
-
-// if (program.abi) {
-//   if (!program.contractAddr || !program.method) {
-//     console.log("Please specify contract address, method and parameters");
-//     process.exit();
-//   }
-//   if (!program.parameters) {
-//     program.parameters = "";
-//   }
-
-//   callContract();
-//   return;
-// }
