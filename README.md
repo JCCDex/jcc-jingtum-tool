@@ -157,12 +157,19 @@ jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy -
 
 ```javascript
 # 挂单
-jcc-jingtum-tool --create_order --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+jcc-jingtum-tool --create_order --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --createOrder 1/SWT//1/JUSDT/
 
-# 使用多签启用主密钥
-jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+# 使用多签挂单
+jcc-jingtum-tool --createOrder 1/JSLASH//1/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
 
-jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+jcc-jingtum-tool --createOrder 1/JSLASH//1/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
 
-jcc-jingtum-tool --enable_secret --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+jcc-jingtum-tool --createOrder 1/JSLASH//1/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+
+# 查询挂单
+jcc-jingtum-tool --getOrders jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+
+# 取消挂单
+jcc-jingtum-tool --cancelOrder 96
+
 ```

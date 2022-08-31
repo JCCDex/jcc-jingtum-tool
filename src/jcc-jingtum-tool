@@ -47,6 +47,11 @@ program.option("--amount <amount>", "transfer amount");
 program.option("--seq <number>", "specified sequence");
 program.option("--getSeq <account>", "get current sequence");
 
+// order related
+program.option("--getOrders <account>", "get orders of account");
+program.option("--createOrder <parameters>", "create order, parameters like: taker gets value/taker gets currency/issuer/taker pays value/taker pays currency/issuer");
+program.option("--cancelOrder <offer sequence>", "cancel order by seq");
+
 program.option("--multi_create <weight and account list>", "Create multisign wallet, like '2,accout,1,account,1'");
 program.option("--get_multi <account>", "get multi signer in account");
 program.option("--sign_for <string>", "sign for account by multi-sign");
@@ -62,22 +67,6 @@ program.option("--enable_secret", "enable secret");
 
 
 program.option("--guess <string>", "format: s/a,b/Axu/c,b/ secret size is 29");
-
-program.option("--createOrder", "create order flag");
-program.option("--type <buy/sell>", "buy or sell");
-
-// program.option("--gas_price <number>", "specified gasPrice, default 10000000000");
-// program.option("--gas_limit <number>", "specified gas limit, default 50000");
-
-// program.option("--erc20 <string>", "erc20 address");
-// program.option("--erc721 <string>", "erc721 address");
-// program.option("--fingate <string>", "fingate address");
-
-// program.option("--abi <contract json file>", "abi definition");
-// program.option("--contractAddr <contract address>", "contract address");
-
-// program.option("--method <string>", "specified contract method name");
-// program.option("--parameters <string>", "specified contract parameters which seprator by |");
 
 program.parse(process.argv);
 
@@ -179,23 +168,6 @@ async function getWalletFromKeystoreFile(_file, _password) {
     process.exit();
   }
 }
-async function getSinger() {
-  if (!program.signers) {
-    console.log('--signers parameter is empty!');
-    process.exit(-1);
-  }
-  let files = program.signers.split(',');
-  let signers = [];
-  for (var i = 0; i < files.length; i++) {
-    try {
-      signers[i] = JSON.parse(fs.readFileSync(files[i], "utf-8"));
-    } catch (e) {
-      console.log("Parse config file fail, check and correct it", e);
-      process.exit();
-    }
-  }
-  return signers;
-}
 
 async function getWalletFromKeystore() {
   if (!program.keystore) {
@@ -285,6 +257,30 @@ async function getBalance() {
   console.log("account sequence:", balance.sequence);
 }
 
+function getAmount(obj) {
+  if (typeof obj === "string") {
+    return {currency: "SWT", value: BigNumber(obj).dividedBy(1000000), issuer: ""};
+  }
+  return {currency: obj.currency, value: obj.value, issuer: obj.issuer};  
+}
+
+async function getOrders(account) {
+  let ret = await getRemote().getAccountOffers(account, {limit: 400});
+
+  console.log("get", ret.offers.length);
+  for (var i = 0; i < ret.offers.length; i++) {
+    let offer = ret.offers[i];
+    offer.taker_gets = getAmount(offer.taker_gets);
+    offer.taker_pays = getAmount(offer.taker_pays);
+    
+    console.log("seq:", offer.seq, 
+      offer.taker_gets.value + offer.taker_gets.currency + " --> " + offer.taker_pays.value + offer.taker_pays.currency,
+      "price:",
+      BigNumber(offer.taker_gets.value).dividedBy(BigNumber(offer.taker_pays.value)) + " " + offer.taker_gets.currency + "/" + offer.taker_pays.currency,
+      );
+  }
+}
+
 async function getServerInfo() {
   let info = await getRemote().rpcServerInfo();
   console.log(JSON.stringify(info, null, 2));
@@ -330,24 +326,7 @@ function emptyCallback(...args) {
   return;
 }
 
-async function getTransferTx(_source, _dest, _token, _issuer, _amount, _memo) {
-  await getWalletFromKeystore();
-  let amount = _token === "SWT" ? {value: _amount, currency: 'SWT', issuer: ''} : {value: _amount, currency: _token, issuer: _issuer === "" ? "jGa9J9TkqtBcUoHe2zqhVFFbgUVED6o9or" : _issuer}
-  let tx = Transaction.buildPaymentTx({source: _source, to: _dest, amount: amount});
-  tx.addMemo(_memo);
-  tx.setFee(10);
-
-  return tx;
-}
-
-async function transfer(_dest, _token, _issuer, _amount, _memo) {
-  let tx = await getTransferTx(_options.wallet.address, _dest, _token, _issuer, _amount, _memo);
-  tx.setSecret(_options.wallet.secret);
-
-  let seq = await getAccountSequence(_options.wallet.address);
-  tx.setSequence(seq);
-  tx.sign(emptyCallback);
-
+async function rpcSubmit(tx) {
   try{
     let ret = await getRemote().rpcSubmit({tx_blob: tx.tx_json.blob});
     if (ret.engine_result === "tesSUCCESS") {
@@ -377,31 +356,100 @@ async function _buildMultiSign(tx) {
   }
 }
 
+async function getTransferTx(_source, _dest, _token, _issuer, _amount, _memo) {
+  await getWalletFromKeystore();
+  let amount = _token === "SWT" ? {value: _amount, currency: 'SWT', issuer: ''} : {value: _amount, currency: _token, issuer: _issuer === "" ? "jGa9J9TkqtBcUoHe2zqhVFFbgUVED6o9or" : _issuer}
+  let tx = Transaction.buildPaymentTx({source: _source, to: _dest, amount: amount});
+  tx.addMemo(_memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
 async function transfer_multi_sign(_dest, _token, _issuer, _amount, _memo) {
   let tx = await getTransferTx(program.sign_for, _dest, _token, _issuer, _amount, _memo);
   await _buildMultiSign(tx);
 }
 
-async function createOrder(_amount, _base, _counter, _sum, _type, _issuer) {
+async function transfer(_dest, _token, _issuer, _amount, _memo) {
+  let tx = await getTransferTx(_options.wallet.address, _dest, _token, _issuer, _amount, _memo);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
+async function getCreateOrderTx(account, taker_gets, taker_pays, memo) {
+  const tx = Transaction.buildOfferCreateTx({
+    type: "Sell",
+    account: account,
+    platform: "jHbpNVU8sqCmBR5UawKvCQMpEJfFhqUvJ5",
+    taker_gets: taker_gets,
+    taker_pays: taker_pays
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function createOrder_multi_sign(taker_gets, taker_pays, memo) {
   await getWalletFromKeystore();
-  let tx = Tx.serializeCreateOrder(
-    !program.sign_for ? _options.wallet.address : program.sign_for,
-    _amount, _base, _counter, _sum, _type, _issuer);
+  let tx = await getCreateOrderTx(program.sign_for, taker_gets, taker_pays, memo);
+  await _buildMultiSign(tx);
+}
 
-  let seq = await swtcSequence.get(
-    JCCExchange.getSequence,
-    !program.sign_for ? _options.wallet.address : program.sign_for);
-  tx.Sequence = seq;
+async function createOrder(taker_gets, taker_pays, memo) {
+  await getWalletFromKeystore();
+  let tx = await getCreateOrderTx(_options.wallet.address, taker_gets, taker_pays, memo);
+  tx.setSecret(_options.wallet.secret);
 
-  if (!program.multi_sign) {
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
 
-  } else { }
+  await rpcSubmit(tx);
+}
+
+async function getCancelOrderTx(account, offerSeq, memo) {
+  const tx = Transaction.buildOfferCancelTx({
+    account: account,
+    sequence: offerSeq
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function cancelOrder_multi_sign(offerSeq, memo) {
+  await getWalletFromKeystore();
+  let tx = await getCancelOrderTx(program.sign_for, offerSeq, memo);
+  await _buildMultiSign(tx);
+}
+
+async function cancelOrder(offerSeq, memo) {
+  await getWalletFromKeystore();
+  let tx = await getCancelOrderTx(_options.wallet.address, offerSeq, memo);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
 }
 
 async function getMultiSigner() {
   let ret = await getRemote().getAccountSignerList(program.get_multi);
   if (ret.account_objects !== null) {
-    console.log("multi sign list:", ret.account_objects[0].SignerEntries);    
+    console.log("multi sign list:\n", ret.account_objects[0].SignerEntries);
+    console.log("signer quorum:", ret.account_objects[0].SignerQuorum);
   }else{
     console.log(program.get_multi, "is not multi sign account.");    
   }
@@ -434,6 +482,7 @@ async function getCreateMultiSignTx(address) {
 
   return tx;
 }
+
 async function createMultiSign_multi_sign() {
   await getWalletFromKeystore();
   let tx = await getCreateMultiSignTx(program.sign_for);
@@ -461,16 +510,7 @@ async function createMultiSign() {
 
   console.log(tx);
 
-  try{
-    let ret = await getRemote().rpcSubmit({tx_blob: tx.tx_json.blob});
-    if (ret.engine_result === "tesSUCCESS") {
-      console.log("hash:", ret.tx_json.hash);
-    }else{
-      console.log(ret);
-    }
-  }catch(e){
-    console.log(e);
-  }
+  await rpcSubmit(tx);
 }
 
 const sleep = (milliseconds) => {
@@ -525,6 +565,12 @@ if (program.balance) {
   getBalance();
   return;
 }
+
+if (program.getOrders) {
+  getOrders(program.getOrders);
+  return;
+}
+
 async function getSeq(account) {
   let seq = await getAccountSequence(account);
   console.log("account", account, "current sequence is", seq);
@@ -534,6 +580,7 @@ if (program.getSeq) {
   getSeq(program.getSeq);
   return;
 }
+
 var memo = "";
 var token = "SWT";
 var issuer = "";
@@ -563,27 +610,46 @@ if (program.transfer) {
   return;
 }
 
+function buildAmount(currency, value, issuer) {
+  if (currency.toUpperCase() === "SWT") {
+    return value;
+  }else{
+    return {currency: currency, value: value, issuer: issuer === "" ? "jGa9J9TkqtBcUoHe2zqhVFFbgUVED6o9or" : issuer}
+  }
+}
+
 if (program.createOrder) {
-  var amount = Number(program.amount);
+  // parse amount
+  let inputs = program.createOrder.split('/');
+  let taker_gets = buildAmount(inputs[1], inputs[0], inputs[2]);
+  let taker_pays = buildAmount(inputs[4], inputs[3], inputs[5]);
 
-  if (isNaN(amount)) {
-    console.log("amount is", program.amount, "invalid");
-    process.exit();
-  }
-  if (!program.type || (program.type !== 'buy' && program.type !== 'sell')) {
-    console.log("invalid type", program.type);
-    process.exit();
+  if (!program.sign_for) {
+    createOrder(taker_gets, taker_pays, memo);
+  }else{
+    createOrder_multi_sign(taker_gets, taker_pays, memo);
   }
 
-  createOrder(program.amount, _base, _counter, _sum, program.type, issuer);
   return;
 }
 
+if (program.cancelOrder) {
+  if (!program.sign_for) {
+    cancelOrder(program.cancelOrder, memo);
+  }else{
+    cancelOrder_multi_sign(program.cancelOrder, memo);
+  }
+
+  return;
+}
+
+// 比较多签的交易信息是否一致
 function validTxs(txs) {
   if (txs.length < 2) return true;
   for (var i = 0; i < txs.length - 1; i++) {
     let a = JSON.stringify(txs[i]);
     let b = JSON.stringify(txs[i+1]);
+    console.log("A:", a, "\nB:", b);
     if ( a !== b) return false;
   }
 
@@ -651,6 +717,7 @@ if (program.multi_sign_commit) {
 
   return;
 }
+
 async function buildAccountTx(account, disable) {
   let options = {}
   if (disable) {
@@ -675,16 +742,7 @@ async function disableSecret(flag) {
     tx.setSecret(_options.wallet.secret);
     tx.sign(emptyCallback);
 
-    try{
-      let ret = await getRemote().rpcSubmit({tx_blob: tx.tx_json.blob});
-      if (ret.engine_result === "tesSUCCESS") {
-        console.log("hash:", ret.tx_json.hash);
-      }else{
-        console.log(ret);
-      }
-    }catch(e){
-      console.log(e);
-    }
+    await rpcSubmit(tx);
   
     return;
   }
