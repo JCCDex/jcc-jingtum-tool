@@ -52,6 +52,19 @@ program.option("--getOrders <account>", "get orders of account");
 program.option("--createOrder <parameters>", "create order, parameters like: taker gets value/taker gets currency/issuer/taker pays value/taker pays currency/issuer");
 program.option("--cancelOrder <offer sequence>", "cancel order by seq");
 
+// relation related
+program.option("--getLimit <account>", "get token limit of account");
+program.option("--setLimit <parameters>", "set token limit of account, parameters like value/currency/issuer");
+
+// blacklist related 
+program.option("--blackList <account>", "query account in blacklist or not");
+// program.option("--setBlackList <account>", "add account to blacklist");
+// program.option("--removeBlackList <account>", "remove account from blacklist");
+
+// token issue related
+
+// nft related
+
 program.option("--multi_create <weight and account list>", "Create multisign wallet, like '2,accout,1,account,1'");
 program.option("--get_multi <account>", "get multi signer in account");
 program.option("--sign_for <string>", "sign for account by multi-sign");
@@ -281,6 +294,26 @@ async function getOrders(account) {
   }
 }
 
+async function getLimit(account) {
+  try {
+    let ret = await getRemote().getAccountTrusts(account, {type: "trust"});
+    console.log(ret);
+    // ret = await getRemote().getAccountCurrencies(account);
+    // console.log(ret);
+  }catch(err){
+    console.log("Error:", err);
+  }
+}
+
+async function blackList(account) {
+  try {
+    let ret = await getRemote().getBlacklistInfo({account: account});
+    console.log(ret);
+  }catch(err){
+    console.log("Error:", err);
+  }
+}
+
 async function getServerInfo() {
   let info = await getRemote().rpcServerInfo();
   console.log(JSON.stringify(info, null, 2));
@@ -445,6 +478,76 @@ async function cancelOrder(offerSeq, memo) {
   await rpcSubmit(tx);
 }
 
+async function getBuildRelationTx(account, currency, issuer, value) {
+  const tx = Transaction.buildRelationTx({
+    type: "trust",
+    account: account,
+    limit: {
+      currency: currency,
+      issuer: issuer,
+      value: value
+    }
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function buildRelation_multi_sign(currency, issuer, value) {
+  await getWalletFromKeystore();
+  let tx = await getBuildRelationTx(program.sign_for, currency, issuer, value);
+  await _buildMultiSign(tx);
+}
+
+async function buildRelation(currency, issuer, value) {
+  await getWalletFromKeystore();
+  let tx = await getBuildRelationTx(_options.wallet.address, currency, issuer, value);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
+async function getSetBlackListTx(account) {
+  const tx = Transaction.buildRelationTx({
+    type: "trust",
+    account: account,
+    limit: {
+      currency: currency,
+      issuer: issuer,
+      value: value
+    }
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function setBlackList_multi_sign(blackList) {
+  await getWalletFromKeystore();
+  let tx = await getSetBlackListTx(program.sign_for, currency, issuer, value);
+  await _buildMultiSign(tx);
+}
+
+async function setBlackList(blackList) {
+  await getWalletFromKeystore();
+  let tx = await getSetBlackListTx(_options.wallet.address, currency, issuer, value);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
 async function getMultiSigner() {
   let ret = await getRemote().getAccountSignerList(program.get_multi);
   if (ret.account_objects !== null) {
@@ -571,6 +674,16 @@ if (program.getOrders) {
   return;
 }
 
+if (program.getLimit) {
+  getLimit(program.getLimit);
+  return;
+}
+
+if (program.blackList) {
+  blackList(program.blackList);
+  return;
+}
+
 async function getSeq(account) {
   let seq = await getAccountSequence(account);
   console.log("account", account, "current sequence is", seq);
@@ -638,6 +751,31 @@ if (program.cancelOrder) {
     cancelOrder(program.cancelOrder, memo);
   }else{
     cancelOrder_multi_sign(program.cancelOrder, memo);
+  }
+
+  return;
+}
+
+if (program.setLimit) {
+  // parse token info
+  let inputs = program.setLimit.split('/');
+  let token = buildAmount(inputs[1], inputs[0], inputs[2]);
+
+  if (!program.sign_for) {
+    buildRelation(token.currency, token.issuer, token.value);
+  }else{
+    buildRelation_multi_sign(token.currency, token.issuer, token.value);
+  }
+
+  return;
+}
+
+if (program.setBlackList) {
+
+  if (!program.sign_for) {
+    setBlackList(program.setBlackList);
+  }else{
+    setBlackList_multi_sign(program.setBlackList);
   }
 
   return;

@@ -172,4 +172,47 @@ jcc-jingtum-tool --getOrders jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
 # 取消挂单
 jcc-jingtum-tool --cancelOrder 96
 
+# 使用多签取消挂单
+jcc-jingtum-tool --cancelOrder 97 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+
+jcc-jingtum-tool --cancelOrder 97 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+
+jcc-jingtum-tool --cancelOrder 97 --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+
+```
+
+- 设置 trustline
+
+```javascript
+# 查询trustline
+jcc-jingtum-tool --getLimit jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+
+# 设置trustline
+jcc-jingtum-tool --setLimit 10/JUSDT/ --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+
+# 使用多签设置trustline
+jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+
+jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+
+jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+
+```
+
+- 黑名单相关
+
+```javascript
+# 查询trustline
+jcc-jingtum-tool --getLimit jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+
+# 设置trustline
+jcc-jingtum-tool --setLimit 10/JUSDT/ --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+
+# 使用多签设置trustline
+jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+
+jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+
+jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+
 ```
