@@ -1,6 +1,6 @@
 {
   "name": "jcc-jingtum-tool",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "jccdex jcc jingtum tool",
   "files": [
     "lib"
@@ -34,13 +34,14 @@
   "homepage": "https://github.com/JCCDex/jcc-jingtum-tool#readme",
   "dependencies": {
     "@swtc/common": "^1.0.11",
-    "@swtc/rpc": "^1.0.3",
-    "@swtc/transaction": "^1.1.1",
+    "@swtc/rpc": "^1.1.2",
+    "@swtc/transaction": "^1.1.2",
     "bignumber.js": "^9.0.0",
     "commander": "^2.20.0",
     "fs": "0.0.1-security",
     "jcc_wallet": "^1.0.5",
-    "readline-sync": "^1.4.10"
+    "readline-sync": "^1.4.10",
+    "utf-8": "^2.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.3.3",
