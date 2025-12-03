@@ -1,6 +1,6 @@
 {
   "name": "jcc-jingtum-tool",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "jccdex jcc jingtum tool",
   "files": [
     "lib"
@@ -34,20 +34,21 @@
   "homepage": "https://github.com/JCCDex/jcc-jingtum-tool#readme",
   "dependencies": {
     "@swtc/common": "^1.0.11",
-    "@swtc/rpc": "^1.0.3",
-    "@swtc/transaction": "^1.1.1",
+    "@swtc/rpc": "^1.1.2",
+    "@swtc/transaction": "^1.1.2",
     "bignumber.js": "^9.0.0",
     "commander": "^2.20.0",
     "fs": "0.0.1-security",
     "jcc_wallet": "^1.0.5",
-    "readline-sync": "^1.4.10"
+    "readline-sync": "^1.4.10",
+    "utf-8": "^2.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.3.3",
     "@babel/plugin-transform-runtime": "^7.2.0",
     "@babel/preset-env": "^7.3.1",
     "@babel/runtime": "^7.4.2",
-    "babel-eslint": "^8.2.6",
+    "babel-eslint": "^10.1.0",
     "chai": "^4.2.0",
     "coveralls": "^3.0.2",
     "eslint-config-standard": "^11.0.0",
@@ -55,12 +56,12 @@
     "eslint-plugin-node": "^7.0.1",
     "eslint-plugin-promise": "^4.0.1",
     "eslint-plugin-standard": "^3.1.0",
-    "gulp": "^4.0.0",
+    "gulp": "^5.0.1",
     "gulp-babel": "^8.0.0",
-    "gulp-eslint": "^5.0.0",
+    "gulp-eslint": "^3.0.1",
     "husky": "^3.1.0",
-    "mocha": "^5.2.0",
-    "nyc": "^14.1.1",
+    "mocha": "^11.7.5",
+    "nyc": "^17.1.0",
     "prettier": "^1.19.1",
     "pretty-quick": "^2.0.1"
   },

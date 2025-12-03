@@ -6,10 +6,12 @@ const BigNumber = require("bignumber.js");
 const JingchangWallet = require('jcc_wallet').JingchangWallet
 const jtWallet = require('jcc_wallet').jtWallet
 var readlineSync = require("readline-sync");
-const { convertStringToHex, convertHexToString } = require("@swtc/common");
+// const { convertStringToHex, convertHexToString } = require("@swtc/common");
 const { createCipheriv } = require("crypto");
 const Remote = require("@swtc/rpc").Remote;
 const Transaction = require("@swtc/transaction").Transaction
+const { funcStringToHex } = require("@swtc/common");
+const utf8 = require("utf8");
 
 function getBaseHome() {
   return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-jingtum-tool";
@@ -58,13 +60,23 @@ program.option("--setLimit <parameters>", "set token limit of account, parameter
 
 // blacklist related 
 program.option("--blackList <account>", "query account in blacklist or not");
-// program.option("--setBlackList <account>", "add account to blacklist");
-// program.option("--removeBlackList <account>", "remove account from blacklist");
+program.option("--setBlackList <account>", "add account to blacklist");
+program.option("--removeBlackList <account>", "remove account from blacklist");
 
 // token issue related
+program.option("--issueSet <parameters>", "issue new token, parameters like value/currency/issuer");
 
 // nft related
+program.option("--setTokenIssue <account>", "set 721 issue account, with token, amount and manage account");
+program.option("--tokenId <id>", "721 token id");
+program.option("--tokenInfo <info>", "721 token info [{type:'',data:''}]");
+program.option("--publish721 <receive account>", "publish 721 to receive account, with token name, token id, token infos, and publish account");
+program.option("--transfer721 <receive account>", "tansfer 721 to receive account, with token id, and owner account");
+program.option("--delete721 <token id>", "delete 721, with token id and owner account");
+program.option("--get721Account <account>", "get all 721 in account");
+program.option("--get721Info <token id>", "get 721 detail info");
 
+// 多签名相关
 program.option("--multi_create <weight and account list>", "Create multisign wallet, like '2,accout,1,account,1'");
 program.option("--get_multi <account>", "get multi signer in account");
 program.option("--sign_for <string>", "sign for account by multi-sign");
@@ -259,15 +271,19 @@ if (program.guess) {
 }
 
 async function getBalance() {
-  let balance = await getRemote().getAccountBalances(program.balance);
-  if (!balance.balances) {
-    console.log("get", program.balance, "fail! something wrong unknown");
-    return;
+  try{
+    let balance = await getRemote().getAccountBalances(program.balance);
+    if (!balance.balances) {
+      console.log("get", program.balance, "fail! something wrong unknown");
+      return;
+    }
+    balance.balances.forEach(token => {
+      console.log(JSON.stringify(token, null, 2));
+    });
+    console.log("account sequence:", balance.sequence);
+  }catch(e){
+    console.log("error:", e);
   }
-  balance.balances.forEach(token => {
-    console.log(JSON.stringify(token, null, 2));
-  });
-  console.log("account sequence:", balance.sequence);
 }
 
 function getAmount(obj) {
@@ -390,7 +406,6 @@ async function _buildMultiSign(tx) {
 }
 
 async function getTransferTx(_source, _dest, _token, _issuer, _amount, _memo) {
-  await getWalletFromKeystore();
   let amount = _token === "SWT" ? {value: _amount, currency: 'SWT', issuer: ''} : {value: _amount, currency: _token, issuer: _issuer === "" ? "jGa9J9TkqtBcUoHe2zqhVFFbgUVED6o9or" : _issuer}
   let tx = Transaction.buildPaymentTx({source: _source, to: _dest, amount: amount});
   tx.addMemo(_memo);
@@ -400,11 +415,13 @@ async function getTransferTx(_source, _dest, _token, _issuer, _amount, _memo) {
 }
 
 async function transfer_multi_sign(_dest, _token, _issuer, _amount, _memo) {
+  await getWalletFromKeystore();
   let tx = await getTransferTx(program.sign_for, _dest, _token, _issuer, _amount, _memo);
   await _buildMultiSign(tx);
 }
 
 async function transfer(_dest, _token, _issuer, _amount, _memo) {
+  await getWalletFromKeystore();
   let tx = await getTransferTx(_options.wallet.address, _dest, _token, _issuer, _amount, _memo);
   tx.setSecret(_options.wallet.secret);
 
@@ -513,15 +530,10 @@ async function buildRelation(currency, issuer, value) {
   await rpcSubmit(tx);
 }
 
-async function getSetBlackListTx(account) {
-  const tx = Transaction.buildRelationTx({
-    type: "trust",
-    account: account,
-    limit: {
-      currency: currency,
-      issuer: issuer,
-      value: value
-    }
+async function getSetBlackListTx(account, blackList) {
+  const tx = Transaction.buildSetBlackListTx({
+    managerAccount: account,
+    blockAccount: blackList
   });
 
   tx.addMemo(memo);
@@ -532,13 +544,212 @@ async function getSetBlackListTx(account) {
 
 async function setBlackList_multi_sign(blackList) {
   await getWalletFromKeystore();
-  let tx = await getSetBlackListTx(program.sign_for, currency, issuer, value);
+  let tx = await getSetBlackListTx(program.sign_for, blackList);
   await _buildMultiSign(tx);
 }
 
 async function setBlackList(blackList) {
   await getWalletFromKeystore();
-  let tx = await getSetBlackListTx(_options.wallet.address, currency, issuer, value);
+  let tx = await getSetBlackListTx(_options.wallet.address, blackList);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
+async function getRemoveBlackListTx(account, blackList) {
+  const tx = Transaction.buildRemoveBlackListTx({
+    managerAccount: account,
+    blockAccount: blackList
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function removeBlackList_multi_sign(blackList) {
+  await getWalletFromKeystore();
+  let tx = await getRemoveBlackListTx(program.sign_for, blackList);
+  await _buildMultiSign(tx);
+}
+
+async function removeBlackList(blackList) {
+  await getWalletFromKeystore();
+  let tx = await getRemoveBlackListTx(_options.wallet.address, blackList);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
+async function getIssueSetTx(account, currency, issuer, value) {
+  const tx = Transaction.buildIssueSetTx({
+    managerAccount: account,
+    amount: {
+      currency: currency,
+      value: value,
+      issuer: issuer      
+    }
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function issueSet_multi_sign(currency, issuer, value) {
+  await getWalletFromKeystore();
+  let tx = await getIssueSetTx(program.sign_for, currency, issuer, value);
+  await _buildMultiSign(tx);
+}
+
+async function issueSet(currency, issuer, value) {
+  await getWalletFromKeystore();
+  let tx = await getIssueSetTx(_options.wallet.address, currency, issuer, value);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
+async function getSetTokenIssueTx(account, publisher, token, amount) {
+  const tx = Transaction.buildTokenIssueTx({
+    account: account,
+    publisher: publisher,
+    token: token,
+    number: amount
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function setTokenIssue_multi_sign(account, token, amount) {
+  await getWalletFromKeystore();
+  let tx = await getSetTokenIssueTx(program.sign_for, account, token, amount);
+  await _buildMultiSign(tx);
+}
+
+async function setTokenIssue(account, token, amount) {
+  await getWalletFromKeystore();
+  let tx = await getSetTokenIssueTx(_options.wallet.address, account, token, amount);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
+async function getPublish721Tx(account, receiver, name, id, infos) {
+  const tx = Transaction.buildTransferTokenTx({
+    publisher: account,
+    receiver: receiver,
+    token: name,
+    tokenId: id
+  });
+
+  tx.setFee(10);
+  const ms = [];
+  if (Array.isArray(infos) && infos.length > 0) {
+    for (const info of infos) {
+      ms.push({
+        TokenInfo: { InfoType: funcStringToHex(utf8.encode(info.type)), InfoData: funcStringToHex(utf8.encode(info.data)) }
+      });
+    }
+  }
+  if (ms.length > 0) {
+    tx.tx_json.TokenInfos = ms;
+  }
+
+  return tx;
+}
+
+async function publish721_multi_sign(receiver, name, id, infos) {
+  await getWalletFromKeystore();
+  let tx = await getPublish721Tx(_options.wallet.address, receiver, name, id, infos);
+  await _buildMultiSign(tx);
+}
+
+async function publish721(receiver, name, id, infos) {
+  await getWalletFromKeystore();
+  let tx = await getPublish721Tx(_options.wallet.address, receiver, name, id, infos);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
+async function getTransfer721Tx(account, receiver, id) {
+  const tx = Transaction.buildTransferTokenTx({
+    publisher: account,
+    receiver: receiver,
+    tokenId: id
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function transfer721_multi_sign(receiver, id) {
+  await getWalletFromKeystore();
+  let tx = await getTransfer721Tx(_options.wallet.address, receiver, id);
+  await _buildMultiSign(tx);
+}
+
+async function transfer721(receiver, id) {
+  await getWalletFromKeystore();
+  let tx = await getTransfer721Tx(_options.wallet.address, receiver, id);
+  tx.setSecret(_options.wallet.secret);
+
+  let seq = await getAccountSequence(_options.wallet.address);
+  tx.setSequence(seq);
+  tx.sign(emptyCallback);
+
+  await rpcSubmit(tx);
+}
+
+async function getDelete721Tx(account, id) {
+  const tx = Transaction.buildTokenDelTx({
+    publisher: account,
+    tokenId: id
+  });
+
+  tx.addMemo(memo);
+  tx.setFee(10);
+
+  return tx;
+}
+
+async function delete721_multi_sign(id) {
+  await getWalletFromKeystore();
+  let tx = await getDelete721Tx(_options.wallet.address, id);
+  await _buildMultiSign(tx);
+}
+
+async function delete721(id) {
+  await getWalletFromKeystore();
+  let tx = await getDelete721Tx(_options.wallet.address, id);
   tx.setSecret(_options.wallet.secret);
 
   let seq = await getAccountSequence(_options.wallet.address);
@@ -707,9 +918,8 @@ if (program.issuer) {
   issuer = program.issuer;
 }
 
+var amount = Number(program.amount);
 if (program.transfer) {
-  var amount = Number(program.amount);
-
   if (isNaN(amount)) {
     console.log("amount is", program.amount, "invalid");
     process.exit();
@@ -781,13 +991,152 @@ if (program.setBlackList) {
   return;
 }
 
+if (program.removeBlackList) {
+
+  if (!program.sign_for) {
+    removeBlackList(program.removeBlackList);
+  }else{
+    removeBlackList_multi_sign(program.removeBlackList);
+  }
+
+  return;
+}
+
+// 发行token
+if (program.issueSet) {
+  // parse token info
+  let inputs = program.issueSet.split('/');
+  let token = buildAmount(inputs[1], inputs[0], inputs[2]);
+
+  if (!program.sign_for) {
+    issueSet(token.currency, token.issuer, token.value);
+  }else{
+    issueSet_multi_sign(token.currency, token.issuer, token.value);
+  }
+
+  return;
+}
+
+// 指定发行721账号和内容
+if (program.setTokenIssue) {
+  // check issue account, token name, amount 
+  if (!program.token) {
+    console.log("set token issue need --token name");
+    process.exit();
+  }
+  if (isNaN(amount)) {
+    console.log("amount is", program.amount, "invalid");
+    process.exit();
+  }
+
+  if (!program.sign_for) {
+    setTokenIssue(program.setTokenIssue, token, amount);
+  }else{
+    setTokenIssue_multi_sign(program.setTokenIssue, token, amount);
+  }
+
+  return;
+}
+
+// 发行721
+if (program.publish721) {
+  // check receive account, token name, token id, token infos 
+  if (!program.token) {
+    console.log("publish token need --token name");
+    process.exit();
+  }
+  if (!program.tokenId) {
+    console.log("publish token need --tokenId");
+    process.exit();
+  }
+  if (!program.tokenInfo) {
+    console.log("publish token need --tokenInfo");
+    process.exit();
+  }
+
+  const infos = JSON.parse(program.tokenInfo);
+  if (!Array.isArray(infos)) {
+    console.log("token info must be array.");
+    process.exit();
+  }
+  if (!program.sign_for) {
+    publish721(program.publish721, program.token, program.tokenId, infos);
+  }else{
+    publish721_multi_sign(program.publish721, program.token, program.tokenId, infos);
+  }
+
+  return;
+}
+
+// 发行721
+if (program.transfer721) {
+  // check receive account, token id 
+  if (!program.tokenId) {
+    console.log("transfer token need --tokenId");
+    process.exit();
+  }
+
+  if (!program.sign_for) {
+    transfer721(program.transfer721, program.tokenId);
+  }else{
+    transfer721_multi_sign(program.transfer721, program.tokenId);
+  }
+
+  return;
+}
+
+// 销毁721
+if (program.delete721) {
+  // check token id 
+  if (!program.tokenId) {
+    console.log("delete token need --tokenId");
+    process.exit();
+  }
+
+  if (!program.sign_for) {
+    delete721(program.tokenId);
+  }else{
+    delete721_multi_sign(program.tokenId);
+  }
+
+  return;
+}
+
+// 获得账号里的721
+if (program.get721Account) {
+  // check token id 
+  // let inputs = program.issueSet.split('/');
+  // let token = buildAmount(inputs[1], inputs[0], inputs[2]);
+
+  // if (!program.sign_for) {
+  //   issueSet(token.currency, token.issuer, token.value);
+  // }else{
+  //   issueSet_multi_sign(token.currency, token.issuer, token.value);
+  // }
+
+  return;
+}
+// 获得721明细
+if (program.get721Info) {
+  // check token id 
+  // let inputs = program.issueSet.split('/');
+  // let token = buildAmount(inputs[1], inputs[0], inputs[2]);
+
+  // if (!program.sign_for) {
+  //   issueSet(token.currency, token.issuer, token.value);
+  // }else{
+  //   issueSet_multi_sign(token.currency, token.issuer, token.value);
+  // }
+
+  return;
+}
+
 // 比较多签的交易信息是否一致
 function validTxs(txs) {
   if (txs.length < 2) return true;
   for (var i = 0; i < txs.length - 1; i++) {
     let a = JSON.stringify(txs[i]);
     let b = JSON.stringify(txs[i+1]);
-    console.log("A:", a, "\nB:", b);
     if ( a !== b) return false;
   }
 

@@ -202,17 +202,42 @@ jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoK
 - 黑名单相关
 
 ```javascript
-# 查询trustline
-jcc-jingtum-tool --getLimit jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+# 查询是否黑名单
+jcc-jingtum-tool --blackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
 
-# 设置trustline
-jcc-jingtum-tool --setLimit 10/JUSDT/ --keystore jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+# 设置黑名单和解除黑名单
+jcc-jingtum-tool --setBlackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
+jcc-jingtum-tool --removeBlackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy
 
-# 使用多签设置trustline
-jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+# 使用多签设置和解除黑名单
+jcc-jingtum-tool --setBlackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+jcc-jingtum-tool --setBlackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+jcc-jingtum-tool --setBlackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
 
-jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+jcc-jingtum-tool --removeBlackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+jcc-jingtum-tool --removeBlackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+jcc-jingtum-tool --removeBlackList jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+```
 
-jcc-jingtum-tool --setLimit 11/JUSDT/ --sign_for jH8kqWhBv2u4188gCvof6EK3EgQKRoKmGy --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+- 发行 token 相关
+
+```javascript
+# 发行token
+jcc-jingtum-tool --issueSet 50000/TOKEN/issuer --keystore jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL
+
+# 使用多签发行token
+jcc-jingtum-tool --issueSet 50000/TOKEN/issuer --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jMETckC3Wtq2jAbrdHwbhCwLRxatboXrEt --save_sign s1.json
+jcc-jingtum-tool --issueSet 50000/TOKEN/issuer --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jP3gCE8keCarT9Q25ceK3hJwhLv2wEG8Nv --save_sign s2.json
+jcc-jingtum-tool --issueSet 50000/TOKEN/issuer --sign_for jN7LGjimz682TFZSF74WkkQk6sLvF9qCPL --keystore jaLwe24yofQeejkNcBRJRsyk7Q9Y5mi2JA --save_sign s3.json
+```
+
+- 发行 NFT token 相关
+
+```javascript
+# set issuer
+jcc-jingtum-tool --keystore managerAccount --setTokenIssue isserAccount --token "Cross Chain DAO NFT" --amount 10000
+
+# publish 721
+jcc-jingtum-tool --keystore issuerAccount --token "Cross Chain DAO NFT" --publish721 destAccount --tokenId "43726F737320436861696E2044414F2000000000000000000000000000000001" --tokenInfo '[{"type":"tokenUri","data":"ipfs://bafybeidymecalbda5mlmgrhxwfubr7mlojlf7wjdzy5rnv7qsy76zmux4y/1"}]'
 
 ```
