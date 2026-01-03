@@ -2,6 +2,7 @@
 
 const program = require("commander");
 const fs = require("fs");
+const path = require("path");
 const BigNumber = require("bignumber.js");
 const JingchangWallet = require('jcc_wallet').JingchangWallet
 const jtWallet = require('jcc_wallet').jtWallet
@@ -17,7 +18,27 @@ function getBaseHome() {
   return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-jingtum-tool";
 }
 
-program.version("0.0.1");
+function getPackageVersion() {
+  try {
+    // 从当前文件向上查找 package.json
+    let currentDir = __dirname;
+    while (currentDir !== path.parse(currentDir).root) {
+      const packageJsonPath = path.join(currentDir, 'package.json');
+      if (fs.existsSync(packageJsonPath)) {
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+        return packageJson.version || '0.0.1';
+      }
+      currentDir = path.dirname(currentDir);
+    }
+    return '0.0.1';
+  } catch (e) {
+    console.warn('Warning: Could not read package.json version', e.message);
+    return '0.0.1';
+  }
+}
+
+program.version(getPackageVersion());
+
 program.usage("--help", "Show jingtum-tools help");
 
 let _description = "SWTC command line tools";

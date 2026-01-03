@@ -1,6 +1,6 @@
 {
   "name": "jcc-jingtum-tool",
-  "version": "0.0.12",
+  "version": "0.0.19",
   "description": "jccdex jcc jingtum tool",
   "files": [
     "lib"
@@ -41,7 +41,7 @@
     "fs": "0.0.1-security",
     "jcc_wallet": "^1.0.5",
     "readline-sync": "^1.4.10",
-    "utf-8": "^2.0.0"
+    "utf8": "^3.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.3.3",
